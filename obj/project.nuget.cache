@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "dgSpecHash": "R5KHWgL+mHk=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Admin\\source\\repos\\MyLangCompiler\\MyLangCompiler\\MyLangCompiler.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Admin\\.nuget\\packages\\antlr4.runtime.standard\\4.13.1\\antlr4.runtime.standard.4.13.1.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\antlr4buildtasks\\12.14.0\\antlr4buildtasks.12.14.0.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\microsoft.build.framework\\18.0.2\\microsoft.build.framework.18.0.2.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\microsoft.build.utilities.core\\18.0.2\\microsoft.build.utilities.core.18.0.2.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\microsoft.net.stringtools\\18.0.2\\microsoft.net.stringtools.18.0.2.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\system.configuration.configurationmanager\\9.0.0\\system.configuration.configurationmanager.9.0.0.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\system.diagnostics.eventlog\\9.0.0\\system.diagnostics.eventlog.9.0.0.nupkg.sha512",
+    "C:\\Users\\Admin\\.nuget\\packages\\system.security.cryptography.protecteddata\\9.0.6\\system.security.cryptography.protecteddata.9.0.6.nupkg.sha512"
+  ],
+  "logs": []
+}
