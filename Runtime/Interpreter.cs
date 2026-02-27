@@ -14,10 +14,10 @@ public sealed class Interpreter
 
         var mainFunction = program.Declarations
             .OfType<FunctionNode>()
-            .FirstOrDefault(f => f.Name == "main");
+            .FirstOrDefault(f => string.Equals(f.Name, "main", StringComparison.OrdinalIgnoreCase));
 
         if (mainFunction == null)
-            throw new Exception("No main function found.");
+            throw new Exception("No main function found (expected 'main' or 'Main').");
 
         return ExecuteFunction(mainFunction, new List<object?>());
     }
@@ -31,12 +31,10 @@ public sealed class Interpreter
 
         try
         {
-            // Registrar parámetros
             for (int i = 0; i < function.Parameters.Count; i++)
             {
                 var paramName = function.Parameters[i].Name;
                 var value = i < args.Count ? args[i] : null;
-
                 _scope.Declare(paramName, value);
             }
 
@@ -89,6 +87,10 @@ public sealed class Interpreter
 
             case ReturnNode ret:
                 return (true, EvaluateExpression(ret.Value));
+
+            case ExprStmtNode exprStmt:
+                EvaluateExpression(exprStmt.Expression);
+                return (false, null);
 
             case BlockNode nestedBlock:
                 var result = ExecuteBlock(nestedBlock);
@@ -166,6 +168,13 @@ public sealed class Interpreter
         return ExecuteFunction(function, args);
     }
 
+    // ===================== HELPERS =====================
+
+    private static bool IsNumber(object? v) => v is int || v is double;
+
+    private static double ToDouble(object v)
+        => v is int i ? i : (double)v;
+
     // ===================== BINARY =====================
 
     private object? EvaluateBinary(BinaryExprNode bin)
@@ -175,35 +184,91 @@ public sealed class Interpreter
 
         switch (bin.Operator)
         {
+            // --------- Arithmetic (int/double) ---------
             case BinaryOperator.Add:
-                return (int)left! + (int)right!;
+                if (left is string || right is string)
+                    return $"{left}{right}";
+                if (IsNumber(left) && IsNumber(right))
+                {
+                    if (left is double || right is double)
+                        return ToDouble(left!) + ToDouble(right!);
+                    return (int)left! + (int)right!;
+                }
+                throw new Exception("Add supports numbers or string concatenation.");
 
             case BinaryOperator.Subtract:
-                return (int)left! - (int)right!;
+                if (IsNumber(left) && IsNumber(right))
+                {
+                    if (left is double || right is double)
+                        return ToDouble(left!) - ToDouble(right!);
+                    return (int)left! - (int)right!;
+                }
+                throw new Exception("Subtract supports numbers only.");
 
             case BinaryOperator.Multiply:
-                return (int)left! * (int)right!;
+                if (IsNumber(left) && IsNumber(right))
+                {
+                    if (left is double || right is double)
+                        return ToDouble(left!) * ToDouble(right!);
+                    return (int)left! * (int)right!;
+                }
+                throw new Exception("Multiply supports numbers only.");
 
             case BinaryOperator.Divide:
-                return (int)left! / (int)right!;
+                if (IsNumber(left) && IsNumber(right))
+                {
+                    // división: si cualquiera es double, devuelve double
+                    if (left is double || right is double)
+                        return ToDouble(left!) / ToDouble(right!);
+                    return (int)left! / (int)right!;
+                }
+                throw new Exception("Divide supports numbers only.");
 
             case BinaryOperator.Modulo:
-                return (int)left! % (int)right!;
+                if (left is int li && right is int ri)
+                    return li % ri;
+                throw new Exception("Modulo supports int only.");
 
+            // --------- Relational ---------
             case BinaryOperator.Equal:
                 return Equals(left, right);
 
             case BinaryOperator.NotEqual:
                 return !Equals(left, right);
 
+            case BinaryOperator.Less:
+                if (IsNumber(left) && IsNumber(right))
+                    return ToDouble(left!) < ToDouble(right!);
+                throw new Exception("'<': supports numbers only.");
+
+            case BinaryOperator.LessOrEqual:
+                if (IsNumber(left) && IsNumber(right))
+                    return ToDouble(left!) <= ToDouble(right!);
+                throw new Exception("'<=': supports numbers only.");
+
+            case BinaryOperator.Greater:
+                if (IsNumber(left) && IsNumber(right))
+                    return ToDouble(left!) > ToDouble(right!);
+                throw new Exception("'>' supports numbers only.");
+
+            case BinaryOperator.GreaterOrEqual:
+                if (IsNumber(left) && IsNumber(right))
+                    return ToDouble(left!) >= ToDouble(right!);
+                throw new Exception("'>=' supports numbers only.");
+
+            // --------- Logical ---------
             case BinaryOperator.And:
                 return (bool)left! && (bool)right!;
 
             case BinaryOperator.Or:
                 return (bool)left! || (bool)right!;
 
+            // --------- Unary modeled as 0 - expr ---------
             case BinaryOperator.Negate:
-                return -(int)right!;
+                if (right == null) throw new Exception("Negate requires right operand.");
+                if (right is int ri2) return -ri2;
+                if (right is double rd2) return -rd2;
+                throw new Exception("Negate supports numbers only.");
 
             default:
                 throw new Exception($"Unsupported operator '{bin.Operator}'.");

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MyLangCompiler")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6ed21ec4924575d8919c0d6b6aad80aa48ff451b")]
 [assembly: System.Reflection.AssemblyProductAttribute("MyLangCompiler")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MyLangCompiler")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

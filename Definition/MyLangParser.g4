@@ -31,7 +31,7 @@ classMember
   ;
 
 methodDecl
-  : FUNC ID LPAREN paramList? RPAREN COLON typeRef block
+  : ENTRY? FUNC ID LPAREN paramList? RPAREN COLON typeRef block
   ;
 
 functionDecl
@@ -82,13 +82,13 @@ varDecl
 
 initializer
   : expression
-  | newObjectExpr
   | arrayLiteral
   ;
 
-/* Permite:
-   x = expr;
-   set x = expr;
+/*
+  Permite:
+    x = expr;
+    set x = expr;
 */
 assignStmt
   : (SET)? lvalue ASSIGN expression SEMI
@@ -136,6 +136,8 @@ exprStmt
   : expression SEMI
   ;
 
+/* ===================== EXPRESSIONS ===================== */
+
 condition
   : orExpr
   ;
@@ -178,14 +180,26 @@ mulExpr
   ;
 
 unaryExpr
-  : MINUS? primary
+  : MINUS? postfixExpr
   ;
 
-primary
-  : callExpr
-  | newObjectExpr
-  | ID LBRACK expression RBRACK
-  | ID
+/*
+  postfixExpr soporta:
+    - llamadas normales: foo(x)
+    - llamadas a métodos: obj.suma(x, y)
+    - encadenado: a.b().c(d)
+*/
+postfixExpr
+  : primaryPostfix (postfixSuffix)*
+  ;
+
+postfixSuffix
+  : LPAREN argList? RPAREN              // llamada: foo(...)
+  | DOT ID LPAREN argList? RPAREN       // método: obj.suma(...)
+  ;
+
+primaryPostfix
+  : ID                                  // variable base (obj)
   | literal
   | lenExpr
   | askExpr
@@ -193,12 +207,13 @@ primary
   | showExpr
   | readFileExpr
   | writeFileExpr
+  | arrayAccess
   | arrayLiteral
   | LPAREN expression RPAREN
   ;
 
-callExpr
-  : ID LPAREN argList? RPAREN
+arrayAccess
+  : ID LBRACK expression RBRACK
   ;
 
 argList
@@ -227,10 +242,6 @@ readFileExpr
 
 writeFileExpr
   : WRITEFILE LPAREN expression COMMA expression RPAREN
-  ;
-
-newObjectExpr
-  : ID LPAREN argList? RPAREN
   ;
 
 arrayLiteral

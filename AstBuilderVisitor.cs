@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Globalization;
 using Antlr4.Runtime;
-using Antlr4.Runtime.Tree;
 using MyLangCompiler.Nodes;
 using MyLangCompiler.Enumerations;
 
@@ -13,7 +12,6 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
     private static SourceSpan Span(ParserRuleContext ctx)
         => new SourceSpan("input", ctx.Start.Line, ctx.Start.Column);
 
-    // ✅ token.Type viene del LEXER (MyLangLexer.*), no del parser.
     private static BinaryOperator ToBinaryOp(IToken token) => token.Type switch
     {
         MyLangLexer.PLUS => BinaryOperator.Add,
@@ -27,6 +25,10 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
 
         MyLangLexer.EQ => BinaryOperator.Equal,
         MyLangLexer.NEQ => BinaryOperator.NotEqual,
+        MyLangLexer.LT => BinaryOperator.Less,
+        MyLangLexer.LTE => BinaryOperator.LessOrEqual,
+        MyLangLexer.GT => BinaryOperator.Greater,
+        MyLangLexer.GTE => BinaryOperator.GreaterOrEqual,
 
         _ => throw new Exception($"Unsupported operator token: {token.Text} (type={token.Type})")
     };
@@ -44,8 +46,20 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
 
         foreach (var decl in context.topLevelDecl())
         {
-            var node = Visit(decl) as DeclNode;
-            if (node != null)
+            var visited = Visit(decl);
+
+            // ✅ Aplanar varios decls (desde object ...)
+            if (visited is DeclListNode bag)
+            {
+                foreach (var d in bag.Decls)
+                {
+                    Console.WriteLine($"DECL ADDED: {d.GetType().Name}");
+                    program.Declarations.Add(d);
+                }
+                continue;
+            }
+
+            if (visited is DeclNode node)
             {
                 Console.WriteLine($"DECL ADDED: {node.GetType().Name}");
                 program.Declarations.Add(node);
@@ -55,23 +69,61 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
         return program;
     }
 
-
     public override AstNode VisitTopLevelDecl(MyLangParser.TopLevelDeclContext context)
     {
         if (context.useDecl() != null) return Visit(context.useDecl());
         if (context.functionDecl() != null) return Visit(context.functionDecl());
-        // classDecl por ahora no lo construimos
+        if (context.classDecl() != null) return Visit(context.classDecl()); // ✅
         return base.VisitTopLevelDecl(context);
     }
 
     // ================= USE =================
 
     public override AstNode VisitUseDecl(MyLangParser.UseDeclContext context)
+        => new UseDeclNode(Span(context), context.ID().GetText());
+
+    // ================= CLASS / OBJECT (APLANAR MÉTODOS) =================
+
+    public override AstNode VisitClassDecl(MyLangParser.ClassDeclContext context)
     {
-        return new UseDeclNode(
-            Span(context),
-            context.ID().GetText()
-        );
+        var bag = new DeclListNode(Span(context));
+
+        foreach (var member in context.classMember())
+        {
+            if (member.methodDecl() == null) continue;
+
+            var m = member.methodDecl();
+            var fn = BuildFunctionFromMethodDecl(m);
+            bag.Decls.Add(fn);
+        }
+
+        return bag;
+    }
+
+    private FunctionNode BuildFunctionFromMethodDecl(MyLangParser.MethodDeclContext m)
+    {
+        var span = Span(m);
+        var name = m.ID().GetText();
+        var isEntry = m.ENTRY() != null;
+
+        var returnType = (TypeRefNode)Visit(m.typeRef());
+        var body = (BlockNode)Visit(m.block());
+
+        var function = new FunctionNode(span, name, isEntry, returnType, body);
+
+        if (m.paramList() != null)
+        {
+            foreach (var p in m.paramList().param())
+            {
+                var paramName = p.ID().GetText();
+                var typeCtx = p.typeRef();
+                var typeNode = new TypeRefNode(Span(typeCtx), typeCtx.GetText());
+
+                function.Parameters.Add(new ParameterNode(Span(p), paramName, typeNode));
+            }
+        }
+
+        return function;
     }
 
     // ================= FUNCTION =================
@@ -91,32 +143,13 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
         {
             foreach (var p in context.paramList().param())
             {
-                if (p == null)
-                    continue;
-
-                var idToken = p.ID();
+                var paramName = p.ID().GetText();
                 var typeCtx = p.typeRef();
 
-                if (idToken == null || typeCtx == null)
-                    continue; // ignoramos parámetros mal construidos
-
-                var paramName = idToken.GetText();
-
-                var typeNode = new TypeRefNode(
-                    Span(typeCtx),
-                    typeCtx.GetText()
-                );
-
-                var param = new ParameterNode(
-                    Span(p),
-                    paramName,
-                    typeNode
-                );
-
-                function.Parameters.Add(param);
+                var typeNode = new TypeRefNode(Span(typeCtx), typeCtx.GetText());
+                function.Parameters.Add(new ParameterNode(Span(p), paramName, typeNode));
             }
         }
-
 
         return function;
     }
@@ -130,8 +163,7 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
         foreach (var stmt in context.statement())
         {
             var node = Visit(stmt) as StmtNode;
-            if (node != null)
-                block.Statements.Add(node);
+            if (node != null) block.Statements.Add(node);
         }
 
         return block;
@@ -143,10 +175,12 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
     {
         if (context.varDecl() != null) return Visit(context.varDecl());
         if (context.assignStmt() != null) return Visit(context.assignStmt());
+        if (context.ifStmt() != null) return Visit(context.ifStmt());           // ✅ NUEVO
+        if (context.loopStmt() != null) return Visit(context.loopStmt());       // ✅ NUEVO
+        if (context.repeatStmt() != null) return Visit(context.repeatStmt());   // ✅ NUEVO
         if (context.returnStmt() != null) return Visit(context.returnStmt());
         if (context.exprStmt() != null) return Visit(context.exprStmt());
 
-        // if/loop/repeat todavía no implementados → dejamos base
         return base.VisitStatement(context);
     }
 
@@ -167,26 +201,93 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
     {
         var span = Span(context);
 
-        var target = new IdentifierNode(
-            span,
-            context.lvalue().ID().GetText()
-        );
-
+        var target = new IdentifierNode(span, context.lvalue().ID().GetText());
         var value = (ExprNode)Visit(context.expression());
 
         return new AssignNode(span, target, value);
     }
 
     public override AstNode VisitReturnStmt(MyLangParser.ReturnStmtContext context)
-    {
-        return new ReturnNode(
-            Span(context),
-            (ExprNode)Visit(context.expression())
-        );
-    }
+        => new ReturnNode(Span(context), (ExprNode)Visit(context.expression()));
 
     public override AstNode VisitExprStmt(MyLangParser.ExprStmtContext context)
-        => Visit(context.expression());
+    {
+        var expr = (ExprNode)Visit(context.expression());
+        return new ExprStmtNode(Span(context), expr);
+    }
+
+    // ================= IF / LOOP / WHILE =================
+
+    public override AstNode VisitIfStmt(MyLangParser.IfStmtContext context)
+    {
+        var cond = (ExprNode)Visit(context.condition());
+        var thenBlock = (BlockNode)Visit(context.block(0));
+        BlockNode? elseBlock = null;
+
+        if (context.OTHERWISE() != null)
+            elseBlock = (BlockNode)Visit(context.block(1));
+
+        return new IfNode(Span(context), cond, thenBlock, elseBlock);
+    }
+
+    public override AstNode VisitRepeatStmt(MyLangParser.RepeatStmtContext context)
+    {
+        var cond = (ExprNode)Visit(context.condition());
+        var body = (BlockNode)Visit(context.block());
+        return new WhileNode(Span(context), cond, body);
+    }
+
+    public override AstNode VisitLoopStmt(MyLangParser.LoopStmtContext context)
+    {
+        StmtNode? init = null;
+        if (context.loopInit() != null)
+            init = (StmtNode)Visit(context.loopInit());
+
+        var cond = (ExprNode)Visit(context.condition());
+
+        StmtNode? action = null;
+        if (context.loopAction() != null)
+            action = (StmtNode)Visit(context.loopAction());
+
+        var body = (BlockNode)Visit(context.block());
+
+        return new ForNode(Span(context), init, cond, action, body);
+    }
+
+    public override AstNode VisitLoopInit(MyLangParser.LoopInitContext context)
+    {
+        if (context.varDeclNoSemi() != null) return Visit(context.varDeclNoSemi());
+        return Visit(context.assignNoSemi());
+    }
+
+    public override AstNode VisitLoopAction(MyLangParser.LoopActionContext context)
+    {
+        if (context.assignNoSemi() != null) return Visit(context.assignNoSemi());
+
+        var expr = (ExprNode)Visit(context.expression());
+        return new ExprStmtNode(Span(context), expr);
+    }
+
+    public override AstNode VisitVarDeclNoSemi(MyLangParser.VarDeclNoSemiContext context)
+    {
+        var span = Span(context);
+        var name = context.ID().GetText();
+        var type = (TypeRefNode)Visit(context.typeRef());
+
+        ExprNode? initializer = null;
+        if (context.initializer() != null)
+            initializer = (ExprNode)Visit(context.initializer());
+
+        return new VarDeclNode(span, name, type, initializer);
+    }
+
+    public override AstNode VisitAssignNoSemi(MyLangParser.AssignNoSemiContext context)
+    {
+        var span = Span(context);
+        var target = new IdentifierNode(span, context.lvalue().ID().GetText());
+        var value = (ExprNode)Visit(context.expression());
+        return new AssignNode(span, target, value);
+    }
 
     // ================= EXPRESSIONS =================
 
@@ -195,55 +296,46 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
 
     public override AstNode VisitOrExpr(MyLangParser.OrExprContext context)
     {
-        // orExpr : andExpr (OR andExpr)*
         var left = (ExprNode)Visit(context.andExpr(0));
-
         for (int i = 1; i < context.andExpr().Length; i++)
         {
             var right = (ExprNode)Visit(context.andExpr(i));
             left = new BinaryExprNode(Span(context), BinaryOperator.Or, left, right);
         }
-
         return left;
     }
 
     public override AstNode VisitAndExpr(MyLangParser.AndExprContext context)
     {
-        // andExpr : notExpr (AND notExpr)*
         var left = (ExprNode)Visit(context.notExpr(0));
-
         for (int i = 1; i < context.notExpr().Length; i++)
         {
             var right = (ExprNode)Visit(context.notExpr(i));
             left = new BinaryExprNode(Span(context), BinaryOperator.And, left, right);
         }
-
         return left;
     }
 
     public override AstNode VisitNotExpr(MyLangParser.NotExprContext context)
-    {
-        // notExpr : NOT? relExpr
-        // NOT aún no lo representas en AST -> devolvemos relExpr
-        return Visit(context.relExpr());
-    }
+        => Visit(context.relExpr());
 
     public override AstNode VisitRelExpr(MyLangParser.RelExprContext context)
     {
-        // relExpr : addExpr (relOp addExpr)?
         var left = (ExprNode)Visit(context.addExpr(0));
+        if (context.relOp() == null) return left;
 
-        if (context.relOp() == null)
-            return left;
-
-        var opTokenText = context.relOp().GetText();
+        var opText = context.relOp().GetText();
         var right = (ExprNode)Visit(context.addExpr(1));
 
-        var op = opTokenText switch
+        var op = opText switch
         {
             "==" => BinaryOperator.Equal,
             "!=" => BinaryOperator.NotEqual,
-            _ => throw new Exception($"Relational operator '{opTokenText}' not supported yet.")
+            "<" => BinaryOperator.Less,
+            "<=" => BinaryOperator.LessOrEqual,
+            ">" => BinaryOperator.Greater,
+            ">=" => BinaryOperator.GreaterOrEqual,
+            _ => throw new Exception($"Relational operator '{opText}' not supported.")
         };
 
         return new BinaryExprNode(Span(context), op, left, right);
@@ -252,113 +344,119 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
     public override AstNode VisitAddExpr(MyLangParser.AddExprContext context)
     {
         var left = (ExprNode)Visit(context.mulExpr(0));
-
         for (int i = 1; i < context.mulExpr().Length; i++)
         {
             var right = (ExprNode)Visit(context.mulExpr(i));
+            var opText = context.GetChild(2 * i - 1).GetText();
 
-            var operatorToken = context.GetChild(2 * i - 1).GetText();
-
-            var op = operatorToken switch
+            var op = opText switch
             {
                 "+" => BinaryOperator.Add,
                 "-" => BinaryOperator.Subtract,
-                _ => throw new Exception($"Unsupported operator '{operatorToken}' in addExpr.")
+                _ => throw new Exception($"Unsupported operator '{opText}' in addExpr.")
             };
 
-            left = new BinaryExprNode(
-                Span(context),
-                op,
-                left,
-                right
-            );
+            left = new BinaryExprNode(Span(context), op, left, right);
         }
-
         return left;
     }
-
 
     public override AstNode VisitMulExpr(MyLangParser.MulExprContext context)
     {
         var left = (ExprNode)Visit(context.unaryExpr(0));
-
         for (int i = 1; i < context.unaryExpr().Length; i++)
         {
             var right = (ExprNode)Visit(context.unaryExpr(i));
+            var opText = context.GetChild(2 * i - 1).GetText();
 
-            var operatorToken = context.GetChild(2 * i - 1).GetText();
-
-            var op = operatorToken switch
+            var op = opText switch
             {
                 "*" => BinaryOperator.Multiply,
                 "/" => BinaryOperator.Divide,
                 "%" => BinaryOperator.Modulo,
-                _ => throw new Exception($"Unsupported operator '{operatorToken}' in mulExpr.")
+                _ => throw new Exception($"Unsupported operator '{opText}' in mulExpr.")
             };
 
-            left = new BinaryExprNode(
-                Span(context),
-                op,
-                left,
-                right
-            );
+            left = new BinaryExprNode(Span(context), op, left, right);
         }
-
         return left;
     }
 
     public override AstNode VisitUnaryExpr(MyLangParser.UnaryExprContext context)
     {
-        // Si hay operador menos unario
         if (context.MINUS() != null)
         {
-            var exprNode = Visit(context.GetChild(context.ChildCount - 1)) as ExprNode
-                           ?? throw new Exception("Unary minus without expression.");
-
-            return new BinaryExprNode(
-                Span(context),
-                BinaryOperator.Negate,
-                new LiteralNode(Span(context), 0),
-                exprNode
-            );
+            var exprNode = (ExprNode)Visit(context.postfixExpr());
+            return new BinaryExprNode(Span(context), BinaryOperator.Negate, new LiteralNode(Span(context), 0), exprNode);
         }
-
-        // Caso normal: delegar al único hijo real
-        if (context.ChildCount == 1)
-            return Visit(context.GetChild(0));
-
-        throw new Exception($"Invalid unary expression at {context.Start.Line}:{context.Start.Column}");
+        return Visit(context.postfixExpr());
     }
 
-    public override AstNode VisitPrimary(MyLangParser.PrimaryContext context)
-    {
-        if (context.literal() != null) return Visit(context.literal());
-        if (context.callExpr() != null) return Visit(context.callExpr());
+    // ================= POSTFIX =================
 
+    public override AstNode VisitPostfixExpr(MyLangParser.PostfixExprContext context)
+    {
+        ExprNode current = (ExprNode)Visit(context.primaryPostfix());
+
+        foreach (var suffix in context.postfixSuffix())
+        {
+            if (suffix.LPAREN() != null)
+            {
+                var args = ReadArgs(suffix.argList());
+
+                if (current is IdentifierNode id)
+                    current = new CallExprNode(Span(suffix), id.Name, args);
+                else
+                    throw new Exception($"Call '(... )' only supported on identifiers for now. Got: {current.GetType().Name}");
+
+                continue;
+            }
+
+            if (suffix.DOT() != null)
+            {
+                var methodName = suffix.ID().GetText();
+                var args = ReadArgs(suffix.argList());
+                current = new MethodCallExprNode(Span(suffix), current, methodName, args);
+                continue;
+            }
+
+            throw new Exception($"Unknown postfix suffix: {suffix.GetText()}");
+        }
+
+        return current;
+    }
+
+    public override AstNode VisitPrimaryPostfix(MyLangParser.PrimaryPostfixContext context)
+    {
         if (context.ID() != null)
             return new IdentifierNode(Span(context), context.ID().GetText());
+
+        if (context.literal() != null)
+            return Visit(context.literal());
+
+        if (context.lenExpr() != null) return Visit(context.lenExpr());
+        if (context.askExpr() != null) return Visit(context.askExpr());
+        if (context.convertExpr() != null) return Visit(context.convertExpr());
+        if (context.showExpr() != null) return Visit(context.showExpr());
+        if (context.readFileExpr() != null) return Visit(context.readFileExpr());
+        if (context.writeFileExpr() != null) return Visit(context.writeFileExpr());
+        if (context.arrayLiteral() != null) return Visit(context.arrayLiteral());
 
         if (context.expression() != null)
             return Visit(context.expression());
 
-        throw new Exception($"Invalid primary expression at {context.Start.Line}:{context.Start.Column}. Text='{context.GetText()}'");
+        throw new Exception($"Invalid primaryPostfix at {context.Start.Line}:{context.Start.Column}. Text='{context.GetText()}'");
     }
 
-    public override AstNode VisitCallExpr(MyLangParser.CallExprContext context)
+    private List<ExprNode> ReadArgs(MyLangParser.ArgListContext? argList)
     {
-        // callExpr : ID LPAREN argList? RPAREN
-        var span = Span(context);
-        var name = context.ID().GetText();
-
         var args = new List<ExprNode>();
+        if (argList == null) return args;
 
-        if (context.argList() != null)
-        {
-            foreach (var arg in context.argList().expression())
-                args.Add((ExprNode)Visit(arg));
-        }
+        foreach (var expr in argList.expression())
+            args.Add((ExprNode)Visit(expr));
 
-        return new CallExprNode(span, name, args);
+        return args;
     }
 
     // ================= LITERALS =================
@@ -389,10 +487,54 @@ public sealed class AstBuilderVisitor : MyLangParserBaseVisitor<AstNode>
     // ================= TYPE =================
 
     public override AstNode VisitTypeRef(MyLangParser.TypeRefContext context)
+        => new TypeRefNode(Span(context), context.GetText());
+
+    // ================= BUILT-IN EXPRESSIONS =================
+
+    public override AstNode VisitShowExpr(MyLangParser.ShowExprContext context)
     {
-        return new TypeRefNode(
-            Span(context),
-            context.GetText()
-        );
+        // SHOW '(' expression ')'
+        var arg = (ExprNode)Visit(context.expression());
+        return new CallExprNode(Span(context), "show", new List<ExprNode> { arg });
+    }
+
+    public override AstNode VisitAskExpr(MyLangParser.AskExprContext context)
+    {
+        // ASK '(' ID ')'
+        var id = new IdentifierNode(Span(context), context.ID().GetText());
+        return new CallExprNode(Span(context), "ask", new List<ExprNode> { id });
+    }
+
+    public override AstNode VisitLenExpr(MyLangParser.LenExprContext context)
+    {
+        // LEN '(' ID ')'
+        var id = new IdentifierNode(Span(context), context.ID().GetText());
+        return new CallExprNode(Span(context), "len", new List<ExprNode> { id });
+    }
+
+    public override AstNode VisitConvertExpr(MyLangParser.ConvertExprContext context)
+    {
+        // (convertToInt|convertToFloat|convertToBoolean) '(' expression ')'
+        var arg = (ExprNode)Visit(context.expression());
+
+        string fnName =
+            context.CONV_INT() != null ? "convertToInt" :
+            context.CONV_FLOAT() != null ? "convertToFloat" :
+            "convertToBoolean";
+
+        return new CallExprNode(Span(context), fnName, new List<ExprNode> { arg });
+    }
+
+    public override AstNode VisitReadFileExpr(MyLangParser.ReadFileExprContext context)
+    {
+        var arg = (ExprNode)Visit(context.expression());
+        return new CallExprNode(Span(context), "readfile", new List<ExprNode> { arg });
+    }
+
+    public override AstNode VisitWriteFileExpr(MyLangParser.WriteFileExprContext context)
+    {
+        var a = (ExprNode)Visit(context.expression(0));
+        var b = (ExprNode)Visit(context.expression(1));
+        return new CallExprNode(Span(context), "writefile", new List<ExprNode> { a, b });
     }
 }

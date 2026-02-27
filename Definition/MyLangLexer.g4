@@ -2,31 +2,31 @@
 
 /* ========== KEYWORDS ========== */
 
-USE: 'use';
-OBJECT: 'object';
-FUNC: 'func';
-ENTRY: 'entry';
-DECLARE: 'declare';
-SET: 'set';
-CHECK: 'check';
-OTHERWISE: 'otherwise';
-REPEAT: 'repeat';
-LOOP: 'loop';
-GIVES: 'gives';
+USE        : 'use';
+OBJECT     : 'object';
+FUNC       : 'func';
+ENTRY      : 'entry';
+DECLARE    : 'declare';
+SET        : 'set';
+CHECK      : 'check';
+OTHERWISE  : 'otherwise';
+REPEAT     : 'repeat';
+LOOP       : 'loop';
+GIVES      : 'gives';
 
-OR: 'or';
-AND: 'and';
-NOT: 'not';
+OR         : 'or';
+AND        : 'and';
+NOT        : 'not';
 
-LEN: 'len';
-ASK: 'ask';
-SHOW: 'show';
-READFILE: 'readfile';
-WRITEFILE: 'writefile';
+LEN        : 'len';
+ASK        : 'ask';
+SHOW       : 'show';
+READFILE   : 'readfile';
+WRITEFILE  : 'writefile';
 
-CONV_INT: 'convertToInt';
-CONV_FLOAT: 'convertToFloat';
-CONV_BOOL: 'convertToBoolean';
+CONV_INT   : 'convertToInt';
+CONV_FLOAT : 'convertToFloat';
+CONV_BOOL  : 'convertToBoolean';
 
 /* ========== BUILT-IN TYPES ========== */
 
@@ -37,15 +37,49 @@ STRING_TYPE : 'string';
 
 /* ========== LITERALS ========== */
 
-TRUE: 'true';
-FALSE: 'false';
-NULL: 'null';
+TRUE  : 'true';
+FALSE : 'false';
+NULL  : 'null';
 
-FLOAT : DIGIT+ '.' DIGIT+ ;
-INT   : DIGIT+ ;
+FLOAT  : DIGIT+ '.' DIGIT+ ;
+INT    : DIGIT+ ;
 
 STRING : '"' ( ESC | ~["\\] )* '"' ;
 fragment ESC : '\\' ( ['"\\nrt] ) ;
+
+/* ========== OPERATORS ========== */
+
+EQ   : '==';
+NEQ  : '!=';
+GTE  : '>=';
+LTE  : '<=';
+GT   : '>';
+LT   : '<';
+
+PLUS    : '+';
+MINUS   : '-';
+STAR    : '*';
+SLASH   : '/';
+PERCENT : '%';
+
+ASSIGN  : '=';
+
+QMARK   : '?';
+
+/* ========== PUNCTUATION / DELIMITERS ========== */
+
+DOT    : '.';   // <-- IMPORTANTE para obj.suma(...)
+
+LPAREN : '(';
+RPAREN : ')';
+LBRACE : '{';
+RBRACE : '}';
+LBRACK : '[';
+RBRACK : ']';
+
+COLON  : ':';
+COMMA  : ',';
+SEMI   : ';';
 
 /* ========== IDENTIFIERS ========== */
 
@@ -53,38 +87,8 @@ ID : LETTER (LETTER | DIGIT | '_')* ;
 
 /* ========== FRAGMENTS ========== */
 
-fragment LETTER : [a-zA-Z] ;
-fragment DIGIT  : [0-9] ;
-
-/* ========== OPERATORS ========== */
-
-EQ: '==';
-NEQ: '!=';
-GTE: '>=';
-LTE: '<=';
-GT: '>';
-LT: '<';
-
-PLUS: '+';
-MINUS: '-';
-STAR: '*';
-SLASH: '/';
-PERCENT: '%';
-
-ASSIGN: '=';
-
-QMARK: '?';
-
-LPAREN: '(';
-RPAREN: ')';
-LBRACE: '{';
-RBRACE: '}';
-LBRACK: '[';
-RBRACK: ']';
-
-COLON: ':';
-COMMA: ',';
-SEMI: ';';
+fragment LETTER : [a-zA-Z];
+fragment DIGIT  : [0-9];
 
 /* ========== WHITESPACE ========== */
 

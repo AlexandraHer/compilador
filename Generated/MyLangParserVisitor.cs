@@ -260,17 +260,29 @@ public interface IMyLangParserVisitor<Result> : IParseTreeVisitor<Result> {
 	/// <return>The visitor result.</return>
 	Result VisitUnaryExpr([NotNull] MyLangParser.UnaryExprContext context);
 	/// <summary>
-	/// Visit a parse tree produced by <see cref="MyLangParser.primary"/>.
+	/// Visit a parse tree produced by <see cref="MyLangParser.postfixExpr"/>.
 	/// </summary>
 	/// <param name="context">The parse tree.</param>
 	/// <return>The visitor result.</return>
-	Result VisitPrimary([NotNull] MyLangParser.PrimaryContext context);
+	Result VisitPostfixExpr([NotNull] MyLangParser.PostfixExprContext context);
 	/// <summary>
-	/// Visit a parse tree produced by <see cref="MyLangParser.callExpr"/>.
+	/// Visit a parse tree produced by <see cref="MyLangParser.postfixSuffix"/>.
 	/// </summary>
 	/// <param name="context">The parse tree.</param>
 	/// <return>The visitor result.</return>
-	Result VisitCallExpr([NotNull] MyLangParser.CallExprContext context);
+	Result VisitPostfixSuffix([NotNull] MyLangParser.PostfixSuffixContext context);
+	/// <summary>
+	/// Visit a parse tree produced by <see cref="MyLangParser.primaryPostfix"/>.
+	/// </summary>
+	/// <param name="context">The parse tree.</param>
+	/// <return>The visitor result.</return>
+	Result VisitPrimaryPostfix([NotNull] MyLangParser.PrimaryPostfixContext context);
+	/// <summary>
+	/// Visit a parse tree produced by <see cref="MyLangParser.arrayAccess"/>.
+	/// </summary>
+	/// <param name="context">The parse tree.</param>
+	/// <return>The visitor result.</return>
+	Result VisitArrayAccess([NotNull] MyLangParser.ArrayAccessContext context);
 	/// <summary>
 	/// Visit a parse tree produced by <see cref="MyLangParser.argList"/>.
 	/// </summary>
@@ -313,12 +325,6 @@ public interface IMyLangParserVisitor<Result> : IParseTreeVisitor<Result> {
 	/// <param name="context">The parse tree.</param>
 	/// <return>The visitor result.</return>
 	Result VisitWriteFileExpr([NotNull] MyLangParser.WriteFileExprContext context);
-	/// <summary>
-	/// Visit a parse tree produced by <see cref="MyLangParser.newObjectExpr"/>.
-	/// </summary>
-	/// <param name="context">The parse tree.</param>
-	/// <return>The visitor result.</return>
-	Result VisitNewObjectExpr([NotNull] MyLangParser.NewObjectExprContext context);
 	/// <summary>
 	/// Visit a parse tree produced by <see cref="MyLangParser.arrayLiteral"/>.
 	/// </summary>

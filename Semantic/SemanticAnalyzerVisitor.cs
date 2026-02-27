@@ -1,4 +1,5 @@
-﻿using MyLangCompiler.Nodes;
+﻿using System;
+using MyLangCompiler.Nodes;
 using MyLangCompiler.Exceptions;
 using MyLangCompiler.Enumerations;
 
@@ -99,11 +100,75 @@ public sealed class SemanticAnalyzerVisitor
                 VisitReturn(ret, expectedReturnType);
                 return;
 
-            // ✅ Por si tu AST está metiendo expresiones como statements (exprStmt)
-            // (Ej: CallExprNode, BinaryExprNode, IdentifierNode, LiteralNode, etc.)
+            // ✅ NUEVO: expresiones como statement (show(...);, ask(...);, obj.suma(...);, etc.)
+            case ExprStmtNode exprStmt:
+                VisitExpression(exprStmt.Expression);
+                return;
+
+            // ✅ NUEVO: if/check
+            case IfNode ifNode:
+                VisitIf(ifNode, expectedReturnType);
+                return;
+
+            // ✅ NUEVO: while/repeat
+            case WhileNode whileNode:
+                VisitWhile(whileNode, expectedReturnType);
+                return;
+
+            // ✅ NUEVO: for/loop
+            case ForNode forNode:
+                VisitFor(forNode, expectedReturnType);
+                return;
 
             default:
                 throw new SemanticException($"Unsupported statement '{stmt.GetType().Name}'.");
+        }
+    }
+
+    private void VisitIf(IfNode node, TypeSymbol expectedReturnType)
+    {
+        var condType = VisitExpression(node.Condition);
+        if (condType != BuiltInTypeSymbol.Bool)
+            throw new SemanticException("Condition in 'check' must be bool.");
+
+        VisitBlock(node.ThenBlock, expectedReturnType);
+
+        if (node.ElseBlock != null)
+            VisitBlock(node.ElseBlock, expectedReturnType);
+    }
+
+    private void VisitWhile(WhileNode node, TypeSymbol expectedReturnType)
+    {
+        var condType = VisitExpression(node.Condition);
+        if (condType != BuiltInTypeSymbol.Bool)
+            throw new SemanticException("Condition in 'repeat' must be bool.");
+
+        VisitBlock(node.Body, expectedReturnType);
+    }
+
+    private void VisitFor(ForNode node, TypeSymbol expectedReturnType)
+    {
+        // Creamos un scope propio del for (para init/cond/action)
+        var previousScope = _currentScope;
+        _currentScope = new Scope(previousScope);
+
+        try
+        {
+            if (node.Init != null)
+                VisitStatement(node.Init, expectedReturnType);
+
+            var condType = VisitExpression(node.Condition);
+            if (condType != BuiltInTypeSymbol.Bool)
+                throw new SemanticException("Condition in 'loop' must be bool.");
+
+            if (node.Action != null)
+                VisitStatement(node.Action, expectedReturnType);
+
+            VisitBlock(node.Body, expectedReturnType);
+        }
+        finally
+        {
+            _currentScope = previousScope;
         }
     }
 
@@ -167,44 +232,131 @@ public sealed class SemanticAnalyzerVisitor
             case CallExprNode call:
                 return VisitCall(call);
 
+            // ✅ Si estás usando obj.suma(...), soportamos esto
+            case MethodCallExprNode mcall:
+                return VisitMethodCall(mcall);
+
             case BinaryExprNode bin:
-                {
-                    // ✅ NEGATE lo estás modelando como BinaryExpr con Left=0 y Right=expr (como hiciste en el AST)
-                    if (bin.Operator == BinaryOperator.Negate)
-                    {
-                        var rightType = VisitExpression(bin.Right);
-
-                        if (rightType != BuiltInTypeSymbol.Int && rightType != BuiltInTypeSymbol.Float)
-                            throw new SemanticException("Unary '-' only valid for int/float.");
-
-                        return rightType;
-                    }
-
-                    var leftType = VisitExpression(bin.Left);
-                    var rightType2 = VisitExpression(bin.Right);
-
-                    // Para == y != permitimos comparar mismos tipos
-                    if (bin.Operator == BinaryOperator.Equal || bin.Operator == BinaryOperator.NotEqual)
-                    {
-                        if (leftType != rightType2)
-                            throw new SemanticException("Type mismatch in comparison (==/!=).");
-
-                        return BuiltInTypeSymbol.Bool;
-                    }
-
-                    if (leftType != rightType2)
-                        throw new SemanticException("Type mismatch in binary expression.");
-
-                    return ValidateBinaryOperator(bin.Operator, leftType);
-                }
+                return VisitBinary(bin);
 
             default:
                 throw new SemanticException($"Unsupported expression type '{expr.GetType().Name}'.");
         }
     }
 
+    private TypeSymbol VisitBinary(BinaryExprNode bin)
+    {
+        // NEGATE modelado como BinaryExpr(0, expr)
+        if (bin.Operator == BinaryOperator.Negate)
+        {
+            var rightType = VisitExpression(bin.Right);
+
+            if (rightType != BuiltInTypeSymbol.Int && rightType != BuiltInTypeSymbol.Float)
+                throw new SemanticException("Unary '-' only valid for int/float.");
+
+            return rightType;
+        }
+
+        var leftType = VisitExpression(bin.Left);
+        var rightType2 = VisitExpression(bin.Right);
+
+        // Comparaciones: == != < <= > >=  => bool
+        if (bin.Operator == BinaryOperator.Equal || bin.Operator == BinaryOperator.NotEqual)
+        {
+            if (leftType != rightType2)
+                throw new SemanticException("Type mismatch in comparison (==/!=).");
+
+            return BuiltInTypeSymbol.Bool;
+        }
+
+        if (bin.Operator == BinaryOperator.Less ||
+            bin.Operator == BinaryOperator.LessOrEqual ||
+            bin.Operator == BinaryOperator.Greater ||
+            bin.Operator == BinaryOperator.GreaterOrEqual)
+        {
+            if (leftType != rightType2)
+                throw new SemanticException("Type mismatch in comparison (<,<=,>,>=).");
+
+            if (leftType != BuiltInTypeSymbol.Int && leftType != BuiltInTypeSymbol.Float)
+                throw new SemanticException("Relational operators only valid for int/float.");
+
+            return BuiltInTypeSymbol.Bool;
+        }
+
+        if (leftType != rightType2)
+            throw new SemanticException("Type mismatch in binary expression.");
+
+        return ValidateBinaryOperator(bin.Operator, leftType);
+    }
+
     private TypeSymbol VisitCall(CallExprNode call)
     {
+        // ================= BUILT-INS =================
+        // Estos NO están declarados como FunctionNode, así que no deben buscarse en el scope.
+        switch (call.FunctionName)
+        {
+            case "show":
+                // show(expr) => permitido para cualquier tipo (solo validar que la expr exista)
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("show expects 1 argument.");
+                VisitExpression(call.Arguments[0]);
+                return BuiltInTypeSymbol.Int; // retorno dummy, porque se usa como statement
+
+            case "ask":
+                // ask(ID) => el argumento debe ser variable existente (IdentifierNode)
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("ask expects 1 argument.");
+
+                if (call.Arguments[0] is not IdentifierNode id)
+                    throw new SemanticException("ask expects an identifier.");
+
+                var v = _currentScope.Lookup(id.Name) as VariableSymbol;
+                if (v == null)
+                    throw new SemanticException($"Variable '{id.Name}' not declared.");
+
+                // normalmente ask mete un string en la variable
+                // si quieres ser estricto: exigir BuiltInTypeSymbol.String
+                return BuiltInTypeSymbol.String;
+
+            case "len":
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("len expects 1 argument.");
+                VisitExpression(call.Arguments[0]);
+                return BuiltInTypeSymbol.Int;
+
+            case "convertToInt":
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("convertToInt expects 1 argument.");
+                VisitExpression(call.Arguments[0]);
+                return BuiltInTypeSymbol.Int;
+
+            case "convertToFloat":
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("convertToFloat expects 1 argument.");
+                VisitExpression(call.Arguments[0]);
+                return BuiltInTypeSymbol.Float;
+
+            case "convertToBoolean":
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("convertToBoolean expects 1 argument.");
+                VisitExpression(call.Arguments[0]);
+                return BuiltInTypeSymbol.Bool;
+
+            case "readfile":
+                if (call.Arguments.Count != 1)
+                    throw new SemanticException("readfile expects 1 argument.");
+                VisitExpression(call.Arguments[0]);
+                return BuiltInTypeSymbol.String;
+
+            case "writefile":
+                if (call.Arguments.Count != 2)
+                    throw new SemanticException("writefile expects 2 arguments.");
+                VisitExpression(call.Arguments[0]);
+                VisitExpression(call.Arguments[1]);
+                return BuiltInTypeSymbol.Bool;
+        }
+
+        // ================= USER FUNCTIONS =================
         var fn = _currentScope.Lookup(call.FunctionName) as FunctionSymbol;
         if (fn == null)
             throw new SemanticException($"Function '{call.FunctionName}' not declared.");
@@ -225,12 +377,38 @@ public sealed class SemanticAnalyzerVisitor
         return fn.ReturnType;
     }
 
+    private TypeSymbol VisitMethodCall(MethodCallExprNode call)
+    {
+        // ✅ Mínimo viable: tratamos obj.suma(...) como llamada a función global "suma"
+        // (porque tú estás aplanando los métodos de object al nivel global)
+        var fn = _currentScope.Lookup(call.MethodName) as FunctionSymbol;
+        if (fn == null)
+            throw new SemanticException($"Method/function '{call.MethodName}' not declared.");
+
+        if (call.Arguments.Count != fn.Parameters.Count)
+            throw new SemanticException(
+                $"'{call.MethodName}' expects {fn.Parameters.Count} arguments, but got {call.Arguments.Count}.");
+
+        for (int i = 0; i < call.Arguments.Count; i++)
+        {
+            var argType = VisitExpression(call.Arguments[i]);
+            var paramType = TypeResolver.Resolve(fn.Parameters[i].Type);
+
+            if (argType != paramType)
+                throw new SemanticException($"Type mismatch in argument {i + 1} of '{call.MethodName}'. Expected '{paramType}', got '{argType}'.");
+        }
+
+        // También validamos el receiver al menos como expresión válida:
+        VisitExpression(call.Receiver);
+
+        return fn.ReturnType;
+    }
+
     private TypeSymbol ValidateBinaryOperator(BinaryOperator op, TypeSymbol type)
     {
         switch (op)
         {
             case BinaryOperator.Add:
-                // si luego quieres concatenación: permitir String + String
                 if (type == BuiltInTypeSymbol.Int || type == BuiltInTypeSymbol.Float)
                     return type;
                 break;
@@ -267,5 +445,4 @@ public sealed class SemanticAnalyzerVisitor
             _ => throw new SemanticException($"Unknown literal type '{lit.Value.GetType().Name}'.")
         };
     }
-
-};
+}

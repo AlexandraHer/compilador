@@ -18,6 +18,7 @@ C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLa
 C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLangCompiler.AssemblyInfoInputs.cache
 C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLangCompiler.AssemblyInfo.cs
 C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLangCompiler.csproj.CoreCompileInputs.cache
+C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLangCompiler.sourcelink.json
 C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLangCo.89C2CD54.Up2Date
 C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\MyLangCompiler.dll
 C:\Users\Admin\source\repos\MyLangCompiler\MyLangCompiler\obj\Debug\net10.0\refint\MyLangCompiler.dll
