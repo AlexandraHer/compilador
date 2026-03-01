@@ -1,7 +1,11 @@
-﻿namespace MyLangCompiler.Nodes;
+﻿using MyLangCompiler.Enumerations;
+
+namespace MyLangCompiler.Nodes;
 
 public sealed class ParameterNode : AstNode
 {
+    public override NodeKind Kind => NodeKind.Parameter; // ✅
+
     public string Name { get; }
     public TypeRefNode Type { get; }
 

@@ -24,12 +24,16 @@ classDecl
   : OBJECT ID LBRACE classMember* RBRACE
   ;
 
+/* Profe: dentro de clase solo declarar variables, métodos, o llamar/usar (lo básico).
+   Evitamos permitir if/loop/repeat/return directamente como miembros de clase. */
 classMember
   : varDecl
   | methodDecl
-  | statement
+  | assignStmt
+  | exprStmt
   ;
 
+/* Un método NO debe ser entry (entry es el punto de entrada del programa, top-level). */
 methodDecl
   : ENTRY? FUNC ID LPAREN paramList? RPAREN COLON typeRef block
   ;
@@ -85,13 +89,9 @@ initializer
   | arrayLiteral
   ;
 
-/*
-  Permite:
-    x = expr;
-    set x = expr;
-*/
+/* Profe: reasignar variables usando SET (obligatorio) */
 assignStmt
-  : (SET)? lvalue ASSIGN expression SEMI
+  : SET lvalue ASSIGN expression SEMI
   ;
 
 lvalue
@@ -106,8 +106,9 @@ repeatStmt
   : REPEAT LPAREN condition RPAREN block
   ;
 
+/* Profe: loop (init; condition; action;)  -> nota el SEMI antes de RPAREN */
 loopStmt
-  : LOOP LPAREN loopInit? SEMI condition SEMI loopAction? RPAREN block
+  : LOOP LPAREN loopInit? SEMI condition SEMI loopAction? SEMI RPAREN block
   ;
 
 loopInit
@@ -124,8 +125,9 @@ varDeclNoSemi
   : DECLARE ID COLON typeRef (ASSIGN initializer)?
   ;
 
+/* SET obligatorio también dentro del loop */
 assignNoSemi
-  : (SET)? lvalue ASSIGN expression
+  : SET lvalue ASSIGN expression
   ;
 
 returnStmt
@@ -194,12 +196,12 @@ postfixExpr
   ;
 
 postfixSuffix
-  : LPAREN argList? RPAREN              // llamada: foo(...)
-  | DOT ID LPAREN argList? RPAREN       // método: obj.suma(...)
+  : LPAREN argList? RPAREN
+  | DOT ID LPAREN argList? RPAREN
   ;
 
 primaryPostfix
-  : ID                                  // variable base (obj)
+  : ID
   | literal
   | lenExpr
   | askExpr

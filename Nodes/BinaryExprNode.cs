@@ -4,6 +4,8 @@ namespace MyLangCompiler.Nodes;
 
 public sealed class BinaryExprNode : ExprNode
 {
+    public override NodeKind Kind => NodeKind.BinaryExpression;
+
     public BinaryOperator Operator { get; }
     public ExprNode Left { get; }
     public ExprNode Right { get; }

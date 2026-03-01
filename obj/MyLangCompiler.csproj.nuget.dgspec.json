@@ -1,23 +1,23 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Admin\\source\\repos\\MyLangCompiler\\MyLangCompiler\\MyLangCompiler.csproj": {}
+    "C:\\Users\\xavie\\Proyectos\\compilador\\MyLangCompiler.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Admin\\source\\repos\\MyLangCompiler\\MyLangCompiler\\MyLangCompiler.csproj": {
+    "C:\\Users\\xavie\\Proyectos\\compilador\\MyLangCompiler.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Admin\\source\\repos\\MyLangCompiler\\MyLangCompiler\\MyLangCompiler.csproj",
+        "projectUniqueName": "C:\\Users\\xavie\\Proyectos\\compilador\\MyLangCompiler.csproj",
         "projectName": "MyLangCompiler",
-        "projectPath": "C:\\Users\\Admin\\source\\repos\\MyLangCompiler\\MyLangCompiler\\MyLangCompiler.csproj",
-        "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Admin\\source\\repos\\MyLangCompiler\\MyLangCompiler\\obj\\",
+        "projectPath": "C:\\Users\\xavie\\Proyectos\\compilador\\MyLangCompiler.csproj",
+        "packagesPath": "C:\\Users\\xavie\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\xavie\\Proyectos\\compilador\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\xavie\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -26,7 +26,6 @@
         ],
         "sources": {
           "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
-          "C:\\Program Files\\dotnet\\library-packs": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -76,7 +75,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.103/PortableRuntimeIdentifierGraph.json",
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.101/PortableRuntimeIdentifierGraph.json",
           "packagesToPrune": {
             "Microsoft.CSharp": "(,4.7.32767]",
             "Microsoft.VisualBasic": "(,10.4.32767]",

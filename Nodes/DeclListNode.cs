@@ -1,10 +1,12 @@
 ﻿using System.Collections.Generic;
+using MyLangCompiler.Enumerations;
 
 namespace MyLangCompiler.Nodes;
 
-// Contenedor simple para devolver múltiples DeclNode desde el visitor
 public sealed class DeclListNode : DeclNode
 {
+    public override NodeKind Kind => NodeKind.DeclarationList;
+
     public List<DeclNode> Decls { get; } = new();
 
     public DeclListNode(SourceSpan span) : base(span) { }

@@ -1,7 +1,11 @@
-﻿namespace MyLangCompiler.Nodes;
+﻿using MyLangCompiler.Enumerations;
+
+namespace MyLangCompiler.Nodes;
 
 public sealed class VarDeclNode : StmtNode
 {
+    public override NodeKind Kind => NodeKind.VariableDeclaration;
+
     public string Name { get; }
     public TypeRefNode Type { get; }
     public ExprNode? Initializer { get; }

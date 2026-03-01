@@ -1,7 +1,11 @@
-﻿namespace MyLangCompiler.Nodes;
+﻿using MyLangCompiler.Enumerations;
+
+namespace MyLangCompiler.Nodes;
 
 public sealed class IfNode : StmtNode
 {
+    public override NodeKind Kind => NodeKind.If; // ✅
+
     public ExprNode Condition { get; }
     public BlockNode ThenBlock { get; }
     public BlockNode? ElseBlock { get; }

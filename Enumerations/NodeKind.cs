@@ -15,5 +15,16 @@ public enum NodeKind
     UnaryExpression,
     Literal,
     Identifier,
-    CallExpression
+    CallExpression,
+    ArrayLiteral,
+    IndexExpression,
+    MethodCallExpression,
+    TypeReference,
+    ExpressionStatement,
+    If,
+    For,
+    While,
+    Parameter,
+    DeclarationList,
+    ClassDeclaration,
 }
