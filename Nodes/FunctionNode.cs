@@ -1,9 +1,12 @@
 ﻿using System.Collections.Generic;
+using MyLangCompiler.Enumerations;
 
 namespace MyLangCompiler.Nodes;
 
 public sealed class FunctionNode : DeclNode
 {
+    public override NodeKind Kind => NodeKind.Function;
+
     public string Name { get; }
     public bool IsEntry { get; }
 

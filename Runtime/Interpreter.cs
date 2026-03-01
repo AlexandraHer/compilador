@@ -1,5 +1,7 @@
 ﻿using MyLangCompiler.Nodes;
 using MyLangCompiler.Enumerations;
+using System;
+using System.Linq;
 
 namespace MyLangCompiler.Runtime;
 
@@ -12,14 +14,22 @@ public sealed class Interpreter
     {
         _program = program;
 
-        var mainFunction = program.Declarations
+        var entryFunction = program.Declarations
             .OfType<FunctionNode>()
-            .FirstOrDefault(f => string.Equals(f.Name, "main", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(f => f.IsEntry);
 
-        if (mainFunction == null)
-            throw new Exception("No main function found (expected 'main' or 'Main').");
+        if (entryFunction == null)
+        {
+            // Fallback opcional: por si el archivo no usa 'entry'
+            entryFunction = program.Declarations
+                .OfType<FunctionNode>()
+                .FirstOrDefault(f => string.Equals(f.Name, "main", StringComparison.OrdinalIgnoreCase));
+        }
 
-        return ExecuteFunction(mainFunction, new List<object?>());
+        if (entryFunction == null)
+            throw new Exception("No entry function found (expected one marked with 'entry').");
+
+        return ExecuteFunction(entryFunction, new List<object?>());
     }
 
     // ===================== FUNCTION =====================
@@ -95,10 +105,59 @@ public sealed class Interpreter
             case BlockNode nestedBlock:
                 var result = ExecuteBlock(nestedBlock);
                 return (result != null, result);
+            
+            case IfNode ifNode:
+            {
+                var ifResult = ExecuteIf(ifNode);
+                if (ifResult != null) return (true, ifResult);
+                return (false, null);
+            }
+
+            case WhileNode whileNode:
+            {
+                var whileResult = ExecuteWhile(whileNode);
+                if (whileResult != null) return (true, whileResult);
+                return (false, null);
+            }
+
+            case ForNode forNode:
+            {
+                var forResult = ExecuteFor(forNode);
+                if (forResult != null) return (true, forResult);
+                return (false, null);
+            }
 
             default:
                 throw new Exception($"Unsupported statement '{stmt.GetType().Name}'.");
         }
+    }
+
+    private static bool TryGetArraySize(TypeRefNode typeRef, out int size)
+    {
+        size = 0;
+        var text = typeRef.Name;
+
+        var l = text.IndexOf('[');
+        var r = text.IndexOf(']');
+
+        if (l < 0 || r < 0 || r <= l) return false;
+
+        var inside = text.Substring(l + 1, r - l - 1);
+        return int.TryParse(inside, out size);
+    }
+
+    private static string GetBaseTypeName(TypeRefNode typeRef)
+    {
+        var text = typeRef.Name;
+
+        // quitar [n]
+        var bracket = text.IndexOf('[');
+        if (bracket >= 0) text = text.Substring(0, bracket);
+
+        // quitar ?
+        if (text.EndsWith("?")) text = text.Substring(0, text.Length - 1);
+
+        return text;
     }
 
     // ===================== VARIABLES =====================
@@ -108,7 +167,30 @@ public sealed class Interpreter
         object? value = null;
 
         if (varDecl.Initializer != null)
+        {
             value = EvaluateExpression(varDecl.Initializer);
+        }
+        else
+        {
+            // declare arr:i[3]; -> crear lista con tamaño 3
+            if (TryGetArraySize(varDecl.Type, out var size))
+            {
+                var baseType = GetBaseTypeName(varDecl.Type);
+
+                object? def = baseType switch
+                {
+                    "i" => 0,
+                    "f" => 0.0,
+                    "b" => false,
+                    "s" => "",
+                    _ => null // clases/objetos: null por defecto
+                };
+
+                var list = new List<object?>(size);
+                for (int i = 0; i < size; i++) list.Add(def);
+                value = list;
+            }
+        }
 
         if (!_scope.Declare(varDecl.Name, value))
             throw new Exception($"Variable '{varDecl.Name}' already declared in this scope (runtime).");
@@ -116,12 +198,30 @@ public sealed class Interpreter
 
     private void ExecuteAssign(AssignNode assign)
     {
+        // set arr[0] = ...
+        if (assign.Target is IndexExprNode idx)
+        {
+            var target = EvaluateExpression(idx.Target);
+            var index = EvaluateExpression(idx.Index);
+            var value = EvaluateExpression(assign.Value);
+
+            if (target is not List<object?> list)
+                throw new Exception("Index assignment only supported on arrays (runtime).");
+
+            if (index is not int i)
+                throw new Exception("Array index must be int (runtime).");
+
+            list[i] = value;
+            return;
+        }
+
+        // set x = ...
         var identifier = assign.Target as IdentifierNode
-            ?? throw new Exception("Assignment target must be identifier.");
+            ?? throw new Exception("Assignment target must be identifier or index.");
 
-        var value = EvaluateExpression(assign.Value);
+        var value2 = EvaluateExpression(assign.Value);
 
-        if (!_scope.Assign(identifier.Name, value))
+        if (!_scope.Assign(identifier.Name, value2))
             throw new Exception($"Variable '{identifier.Name}' not declared (runtime).");
     }
 
@@ -145,6 +245,26 @@ public sealed class Interpreter
             case CallExprNode call:
                 return EvaluateCall(call);
 
+            case MethodCallExprNode mcall:
+                return EvaluateMethodCall(mcall); 
+            
+            case ArrayLiteralNode arr:
+                return arr.Items.Select(EvaluateExpression).ToList();
+
+            case IndexExprNode idx:
+            {
+                var target = EvaluateExpression(idx.Target);
+                var index = EvaluateExpression(idx.Index);
+
+                if (target is not List<object?> list)
+                    throw new Exception("Indexing only supported on arrays (List<object?>) runtime.");
+
+                if (index is not int i)
+                    throw new Exception("Array index must be int (runtime).");
+
+                return list[i];
+            }
+
             default:
                 throw new Exception($"Unsupported expression '{expr.GetType().Name}'.");
         }
@@ -154,6 +274,96 @@ public sealed class Interpreter
 
     private object? EvaluateCall(CallExprNode call)
     {
+        // ===================== BUILT-INS =====================
+        switch (call.FunctionName)
+        {
+            case "show":
+            {
+                if (call.Arguments.Count != 1)
+                    throw new Exception("show expects 1 argument (runtime).");
+
+                var value = EvaluateExpression(call.Arguments[0]);
+                Console.Write(value?.ToString() ?? "null");  // NO salto de línea
+                return 0; // dummy
+            }
+
+            case "ask":
+            {
+                if (call.Arguments.Count != 1)
+                    throw new Exception("ask expects 1 argument (runtime).");
+
+                if (call.Arguments[0] is not IdentifierNode id)
+                    throw new Exception("ask expects an identifier (runtime).");
+
+                var input = Console.ReadLine() ?? "";
+
+                // ask(var) -> mete string en la variable
+                if (!_scope.Assign(id.Name, input))
+                    throw new Exception($"Variable '{id.Name}' not declared (runtime).");
+
+                return input; // retorna string, por si lo usan en expresiones
+            }
+
+            case "len":
+            {
+                if (call.Arguments.Count != 1)
+                    throw new Exception("len expects 1 argument (runtime).");
+
+                var v = EvaluateExpression(call.Arguments[0]);
+
+                // Si luego implementas arrays como List<object?> o similar, ajustas aquí
+                if (v is string s) return s.Length;
+                if (v is System.Collections.ICollection c) return c.Count;
+
+                throw new Exception("len supports string or collection (runtime).");
+            }
+
+            case "convertToInt":
+            {
+                if (call.Arguments.Count != 1)
+                    throw new Exception("convertToInt expects 1 argument (runtime).");
+
+                var v = EvaluateExpression(call.Arguments[0])?.ToString() ?? "";
+                if (int.TryParse(v, out var i)) return i;
+                throw new Exception("convertToInt: invalid int value (runtime).");
+            }
+
+            case "convertToFloat":
+            {
+                if (call.Arguments.Count != 1)
+                    throw new Exception("convertToFloat expects 1 argument (runtime).");
+
+                var v = EvaluateExpression(call.Arguments[0])?.ToString() ?? "";
+                if (double.TryParse(v, out var d)) return d;
+                throw new Exception("convertToFloat: invalid float value (runtime).");
+            }
+
+            case "convertToBoolean":
+            {
+                if (call.Arguments.Count != 1)
+                    throw new Exception("convertToBoolean expects 1 argument (runtime).");
+
+                var v = (EvaluateExpression(call.Arguments[0])?.ToString() ?? "").Trim().ToLowerInvariant();
+                if (v == "true") return true;
+                if (v == "false") return false;
+                throw new Exception("convertToBoolean: invalid boolean value (runtime).");
+            }
+        }
+
+        // ===================== CONSTRUCTOR (ClassName()) =====================
+        var isClass = _program!.Declarations
+            .OfType<ClassDeclNode>()
+            .Any(c => c.Name == call.FunctionName);
+
+        if (isClass)
+        {
+            if (call.Arguments.Count != 0)
+                throw new Exception($"Constructor '{call.FunctionName}' expects 0 arguments (runtime).");
+
+            // Representación mínima del objeto (por ahora)
+            return new Dictionary<string, object?> { ["__class"] = call.FunctionName };
+        }
+        
         var function = _program!.Declarations
             .OfType<FunctionNode>()
             .FirstOrDefault(f => f.Name == call.FunctionName);
@@ -166,6 +376,98 @@ public sealed class Interpreter
             .ToList();
 
         return ExecuteFunction(function, args);
+    }
+    private object? EvaluateMethodCall(MethodCallExprNode call)
+    {
+        // Evaluamos receiver solo para validar que existe (obj)
+        _ = EvaluateExpression(call.Receiver);
+
+        // Como ustedes aplanaron métodos a funciones globales,
+        // tratamos obj.suma(...) como suma(...)
+        var function = _program!.Declarations
+            .OfType<FunctionNode>()
+            .FirstOrDefault(f => f.Name == call.MethodName);
+
+        if (function == null)
+            throw new Exception($"Method/function '{call.MethodName}' not found (runtime).");
+
+        var args = call.Arguments
+            .Select(a => EvaluateExpression(a))
+            .ToList();
+
+        return ExecuteFunction(function, args);
+    }
+
+    private object? ExecuteIf(IfNode node)
+    {
+        var cond = EvaluateExpression(node.Condition);
+        if (cond is not bool b)
+            throw new Exception("Condition in 'check' must evaluate to bool (runtime).");
+
+        if (b)
+            return ExecuteBlock(node.ThenBlock);
+
+        if (node.ElseBlock != null)
+            return ExecuteBlock(node.ElseBlock);
+
+        return null;
+    }
+
+    private object? ExecuteWhile(WhileNode node)
+    {
+        while (true)
+        {
+            var cond = EvaluateExpression(node.Condition);
+            if (cond is not bool b)
+                throw new Exception("Condition in 'repeat' must evaluate to bool (runtime).");
+
+            if (!b) break;
+
+            var result = ExecuteBlock(node.Body);
+            if (result != null) return result; // propagate return
+        }
+
+        return null;
+    }
+
+    private object? ExecuteFor(ForNode node)
+    {
+        // Scope propio del loop (igual que hiciste en semántica)
+        var previous = _scope;
+        _scope = new RuntimeScope(previous);
+
+        try
+        {
+            if (node.Init != null)
+            {
+                var (hasReturn, value) = ExecuteStatement(node.Init);
+                if (hasReturn) return value;
+            }
+
+            while (true)
+            {
+                var cond = EvaluateExpression(node.Condition);
+                if (cond is not bool b)
+                    throw new Exception("Condition in 'loop' must evaluate to bool (runtime).");
+
+                if (!b) break;
+
+                var bodyResult = ExecuteBlock(node.Body);
+                if (bodyResult != null) return bodyResult; // propagate return
+
+                if (node.Action != null)
+                {
+                    var (hasReturn, value) = ExecuteStatement(node.Action);
+                    if (hasReturn) return value;
+                }
+            }
+
+            return null;
+        }
+        finally
+        {
+            _scope = previous;
+        }
     }
 
     // ===================== HELPERS =====================

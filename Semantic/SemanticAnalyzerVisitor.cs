@@ -13,9 +13,27 @@ public sealed class SemanticAnalyzerVisitor
     {
         if (program == null) throw new ArgumentNullException(nameof(program));
 
+        var entryCount = program.Declarations
+            .OfType<FunctionNode>()
+            .Count(f => f.IsEntry);
+
+        if (entryCount != 1)
+            throw new SemanticException($"Expected exactly 1 entry function, but found {entryCount}.");
+
+        DeclareAllTypes(program);
         DeclareAllFunctions(program);  // Fase 1
         VisitProgram(program);         // Fase 2
     }
+
+    private void DeclareAllTypes(ProgramNode program)
+{
+    foreach (var decl in program.Declarations)
+    {
+        // Si ya tienes ClassDeclNode:
+        if (decl is ClassDeclNode cls)
+            TypeResolver.RegisterClass(cls.Name);
+    }
+}
 
     // ===================== FASE 1 =====================
     // Declarar todas las funciones primero (permite llamadas adelantadas y recursión)
@@ -174,24 +192,62 @@ public sealed class SemanticAnalyzerVisitor
 
     private void VisitVarDecl(VarDeclNode varDecl)
     {
-        var type = TypeResolver.Resolve(varDecl.Type);
+        var declaredType = TypeResolver.Resolve(varDecl.Type);
 
-        var symbol = new VariableSymbol(varDecl.Name, type);
+        var symbol = new VariableSymbol(varDecl.Name, declaredType);
         if (!_currentScope.Declare(symbol))
             throw new SemanticException($"Variable '{varDecl.Name}' already declared in this scope.");
 
-        if (varDecl.Initializer != null)
+        if (varDecl.Initializer == null) return;
+
+        // ✅ Caso especial: declare arr:i[3] = [ ... ]
+        if (declaredType is ArrayTypeSymbol declaredArr && varDecl.Initializer is ArrayLiteralNode lit)
         {
-            var initType = VisitExpression(varDecl.Initializer);
-            if (initType != type)
-                throw new SemanticException($"Type mismatch in initializer of '{varDecl.Name}'. Expected '{type}', got '{initType}'.");
+            if (TypeResolver.TryGetArraySize(varDecl.Type, out var declaredSize))
+            {
+                if (lit.Items.Count != declaredSize)
+                    throw new SemanticException(
+                        $"Array literal size mismatch for '{varDecl.Name}'. Expected {declaredSize} elements, got {lit.Items.Count}.");
+            }
+
+            var initType = VisitExpression(lit);
+
+            if (initType is not ArrayTypeSymbol initArr || initArr.ElementType != declaredArr.ElementType)
+                throw new SemanticException($"Type mismatch in initializer of '{varDecl.Name}'.");
+            
+            return;
         }
+
+        // ✅ Caso normal: declare x:i = expr
+        var exprType = VisitExpression(varDecl.Initializer);
+        if (exprType != declaredType)
+            throw new SemanticException(
+                $"Type mismatch in initializer of '{varDecl.Name}'. Expected '{declaredType}', got '{exprType}'.");
     }
 
     private void VisitAssign(AssignNode assign)
     {
+        // set arr[0] = ...
+        if (assign.Target is IndexExprNode idx)
+        {
+            var targetType = VisitExpression(idx.Target);
+            if (targetType is not ArrayTypeSymbol arrType)
+                throw new SemanticException("Index assignment target must be an array.");
+
+            var indexType = VisitExpression(idx.Index);
+            if (indexType != BuiltInTypeSymbol.Int)
+                throw new SemanticException("Array index must be int.");
+
+            var valueType = VisitExpression(assign.Value);
+            if (valueType != arrType.ElementType)
+                throw new SemanticException($"Type mismatch in array element assignment. Expected '{arrType.ElementType}', got '{valueType}'.");
+
+            return;
+        }
+
+        // set x = ...  o  set arr = [...]
         if (assign.Target is not IdentifierNode identifier)
-            throw new SemanticException("Assignment target must be an identifier (for now).");
+            throw new SemanticException("Assignment target must be an identifier or an array index.");
 
         var symbol = _currentScope.Lookup(identifier.Name) as VariableSymbol;
         if (symbol == null)
@@ -238,6 +294,15 @@ public sealed class SemanticAnalyzerVisitor
 
             case BinaryExprNode bin:
                 return VisitBinary(bin);
+            
+            case ArrayLiteralNode arr:
+                return VisitArrayLiteral(arr);
+
+            case IndexExprNode idx:
+                return VisitIndexExpr(idx);
+
+            case UnaryExprNode un:
+                return VisitUnary(un);
 
             default:
                 throw new SemanticException($"Unsupported expression type '{expr.GetType().Name}'.");
@@ -287,6 +352,55 @@ public sealed class SemanticAnalyzerVisitor
             throw new SemanticException("Type mismatch in binary expression.");
 
         return ValidateBinaryOperator(bin.Operator, leftType);
+    }
+
+    private TypeSymbol VisitUnary(UnaryExprNode un)
+    {
+        var t = VisitExpression(un.Operand);
+
+        if (un.Operator == UnaryOperatorKind.Not)
+        {
+            if (t != BuiltInTypeSymbol.Bool)
+                throw new SemanticException("Operator 'not' only valid for bool.");
+            return BuiltInTypeSymbol.Bool;
+        }
+
+        throw new SemanticException($"Unsupported unary operator '{un.Operator}'.");
+    }
+
+    private TypeSymbol VisitArrayLiteral(ArrayLiteralNode arr)
+    {
+        if (arr.Items.Count == 0)
+            throw new SemanticException("Cannot infer type of empty array literal [].");
+
+        var firstType = VisitExpression(arr.Items[0]);
+
+        for (int i = 1; i < arr.Items.Count; i++)
+        {
+            var t = VisitExpression(arr.Items[i]);
+            if (t != firstType)
+                throw new SemanticException("All elements in array literal must have the same type.");
+        }
+
+        // devolver tipo arreglo (cacheado por TypeResolver vía ArrayTypeSymbol)
+        // truco mínimo: construir un TypeRefNode fake "i[0]" NO. Mejor: si firstType ya es BuiltInTypeSymbol/ClassTypeSymbol,
+        // pedimos el ArrayTypeSymbol directo con Resolve usando un TypeRefNode temporal:
+        var fake = new TypeRefNode(arr.Span, $"{firstType.Name}[{arr.Items.Count}]");
+        return TypeResolver.Resolve(fake);
+    }
+
+    private TypeSymbol VisitIndexExpr(IndexExprNode idx)
+    {
+        var targetType = VisitExpression(idx.Target);
+
+        if (targetType is not ArrayTypeSymbol arrType)
+            throw new SemanticException("Indexing is only valid on arrays.");
+
+        var indexType = VisitExpression(idx.Index);
+        if (indexType != BuiltInTypeSymbol.Int)
+            throw new SemanticException("Array index must be int.");
+
+        return arrType.ElementType;
     }
 
     private TypeSymbol VisitCall(CallExprNode call)
@@ -354,6 +468,14 @@ public sealed class SemanticAnalyzerVisitor
                 VisitExpression(call.Arguments[0]);
                 VisitExpression(call.Arguments[1]);
                 return BuiltInTypeSymbol.Bool;
+        }
+
+        if (TypeResolver.TryResolveName(call.FunctionName, out var t) && t is ClassTypeSymbol)
+        {
+            if (call.Arguments.Count != 0)
+                throw new SemanticException($"Constructor '{call.FunctionName}' expects 0 arguments (for now).");
+
+            return t;
         }
 
         // ================= USER FUNCTIONS =================

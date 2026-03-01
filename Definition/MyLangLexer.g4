@@ -29,11 +29,12 @@ CONV_FLOAT : 'convertToFloat';
 CONV_BOOL  : 'convertToBoolean';
 
 /* ========== BUILT-IN TYPES ========== */
+/* Profe pide: i, f, b, s (dejamos también int/float/bool/string por compatibilidad) */
 
-INT_TYPE    : 'int';
-FLOAT_TYPE  : 'float';
-BOOL_TYPE   : 'bool';
-STRING_TYPE : 'string';
+INT_TYPE    : 'i' | 'int';
+FLOAT_TYPE  : 'f' | 'float';
+BOOL_TYPE   : 'b' | 'bool';
+STRING_TYPE : 's' | 'string';
 
 /* ========== LITERALS ========== */
 
@@ -68,7 +69,7 @@ QMARK   : '?';
 
 /* ========== PUNCTUATION / DELIMITERS ========== */
 
-DOT    : '.';   // <-- IMPORTANTE para obj.suma(...)
+DOT    : '.';
 
 LPAREN : '(';
 RPAREN : ')';

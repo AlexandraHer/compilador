@@ -1,7 +1,11 @@
-﻿namespace MyLangCompiler.Nodes;
+﻿using MyLangCompiler.Enumerations;
+
+namespace MyLangCompiler.Nodes;
 
 public sealed class WhileNode : StmtNode
 {
+    public override NodeKind Kind => NodeKind.While; // ✅
+
     public ExprNode Condition { get; }
     public BlockNode Body { get; }
 

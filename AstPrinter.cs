@@ -98,6 +98,56 @@ public static class AstPrinter
                 Print(ret.Value, indent + 2);
                 break;
 
+            case ExprStmtNode exprStmt:
+                Console.WriteLine($"{padding}ExprStmt");
+                Print(exprStmt.Expression, indent + 2);
+                break;
+
+            case IfNode ifNode:
+                Console.WriteLine($"{padding}If");
+                Console.WriteLine($"{padding}  Condition:");
+                Print(ifNode.Condition, indent + 4);
+
+                Console.WriteLine($"{padding}  Then:");
+                Print(ifNode.ThenBlock, indent + 4);
+
+                if (ifNode.ElseBlock != null)
+                {
+                    Console.WriteLine($"{padding}  Else:");
+                    Print(ifNode.ElseBlock, indent + 4);
+                }
+                break;
+
+            case WhileNode whileNode:
+                Console.WriteLine($"{padding}While");
+                Console.WriteLine($"{padding}  Condition:");
+                Print(whileNode.Condition, indent + 4);
+
+                Console.WriteLine($"{padding}  Body:");
+                Print(whileNode.Body, indent + 4);
+                break;
+
+            case ForNode forNode:
+                Console.WriteLine($"{padding}For");
+                if (forNode.Init != null)
+                {
+                    Console.WriteLine($"{padding}  Init:");
+                    Print(forNode.Init, indent + 4);
+                }
+
+                Console.WriteLine($"{padding}  Condition:");
+                Print(forNode.Condition, indent + 4);
+
+                if (forNode.Action != null)
+                {
+                    Console.WriteLine($"{padding}  Action:");
+                    Print(forNode.Action, indent + 4);
+                }
+
+                Console.WriteLine($"{padding}  Body:");
+                Print(forNode.Body, indent + 4);
+                break;
+
             // ===================== EXPRESSIONS =====================
 
             case BinaryExprNode bin:
@@ -123,6 +173,41 @@ public static class AstPrinter
 
             case LiteralNode lit:
                 Console.WriteLine($"{padding}Literal: {lit.Value}");
+                break;
+            case ClassDeclNode cls:
+                Console.WriteLine($"{padding}ClassDecl: {cls.Name}");
+                break;
+            case MethodCallExprNode mcall:
+                Console.WriteLine($"{padding}MethodCall: {mcall.MethodName}");
+                Console.WriteLine($"{padding}  Receiver:");
+                Print(mcall.Receiver, indent + 4);
+
+                if (mcall.Arguments.Count > 0)
+                {
+                    Console.WriteLine($"{padding}  Arguments:");
+                    foreach (var arg in mcall.Arguments)
+                        Print(arg, indent + 4);
+                }
+                break;
+
+            case UnaryExprNode un:
+                Console.WriteLine($"{padding}UnaryExpr: {un.Operator}");
+                Print(un.Operand, indent + 2);
+                break;
+
+            case ArrayLiteralNode arr:
+                Console.WriteLine($"{padding}ArrayLiteral");
+                foreach (var item in arr.Items)
+                    Print(item, indent + 2);
+                break;
+
+            case IndexExprNode idx:
+                Console.WriteLine($"{padding}IndexExpr");
+                Console.WriteLine($"{padding}  Target:");
+                Print(idx.Target, indent + 4);
+
+                Console.WriteLine($"{padding}  Index:");
+                Print(idx.Index, indent + 4);
                 break;
 
             default:

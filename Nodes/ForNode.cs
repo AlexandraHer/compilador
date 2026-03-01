@@ -1,7 +1,11 @@
-﻿namespace MyLangCompiler.Nodes;
+﻿using MyLangCompiler.Enumerations;
+
+namespace MyLangCompiler.Nodes;
 
 public sealed class ForNode : StmtNode
 {
+    public override NodeKind Kind => NodeKind.For;
+
     public StmtNode? Init { get; }
     public ExprNode Condition { get; }
     public StmtNode? Action { get; }

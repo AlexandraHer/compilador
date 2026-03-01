@@ -1,7 +1,11 @@
-﻿namespace MyLangCompiler.Nodes;
+﻿using MyLangCompiler.Enumerations;
+
+namespace MyLangCompiler.Nodes;
 
 public sealed class TypeRefNode : AstNode
 {
+    public override NodeKind Kind => NodeKind.TypeReference;
+
     public string Name { get; }
 
     public TypeRefNode(SourceSpan span, string name)
@@ -10,8 +14,5 @@ public sealed class TypeRefNode : AstNode
         Name = name;
     }
 
-    public override string ToString()
-    {
-        return Name;
-    }
+    public override string ToString() => Name;
 }
