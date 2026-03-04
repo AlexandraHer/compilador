@@ -198,7 +198,6 @@ public sealed class Interpreter
 
     private void ExecuteAssign(AssignNode assign)
     {
-        // set arr[0] = ...
         if (assign.Target is IndexExprNode idx)
         {
             var target = EvaluateExpression(idx.Target);
@@ -206,16 +205,18 @@ public sealed class Interpreter
             var value = EvaluateExpression(assign.Value);
 
             if (target is not List<object?> list)
-                throw new Exception("Index assignment only supported on arrays (runtime).");
+                throw new Exception("Index assignment only supported on arrays (List<object?>) runtime.");
 
             if (index is not int i)
                 throw new Exception("Array index must be int (runtime).");
+
+            if (i < 0 || i >= list.Count)
+                throw new Exception("Array index out of range (runtime).");
 
             list[i] = value;
             return;
         }
 
-        // set x = ...
         var identifier = assign.Target as IdentifierNode
             ?? throw new Exception("Assignment target must be identifier or index.");
 

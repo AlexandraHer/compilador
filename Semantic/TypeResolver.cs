@@ -1,4 +1,5 @@
-﻿using MyLangCompiler.Nodes;
+﻿using System.Collections.Generic;
+using MyLangCompiler.Nodes;
 
 namespace MyLangCompiler.Semantic;
 
@@ -12,8 +13,9 @@ public static class TypeResolver
         ["s"] = BuiltInTypeSymbol.String,
     };
 
-    // ✅ cache: "i" => ArrayTypeSymbol(i), "Math" => ArrayTypeSymbol(Math)
     private static readonly Dictionary<string, ArrayTypeSymbol> _arrayTypes = new();
+
+    private static readonly Dictionary<string, NullableTypeSymbol> _nullableTypes = new();
 
     public static void RegisterClass(string name)
     {
@@ -29,28 +31,43 @@ public static class TypeResolver
 
     public static TypeSymbol Resolve(TypeRefNode typeRef)
     {
-        // Detectar si tiene [n]
-        var isArray = typeRef.Name.Contains('[');
+        var text = typeRef.Name;
 
-        var baseName = ExtractBaseType(typeRef.Name);
+        var hasNullable = text.Contains('?');
+        var hasArray = text.Contains('[');
+
+        var baseName = ExtractBaseType(text); // quita ? y [n]
 
         if (!_types.TryGetValue(baseName, out var baseType))
             throw new Exception($"Unknown type '{baseName}'");
 
-        if (!isArray)
-            return baseType;
+        // 1) primero nullable sobre el tipo base
+        TypeSymbol elementType = baseType;
 
-        // devolver tipo arreglo cacheado
-        if (!_arrayTypes.TryGetValue(baseType.Name, out var arrType))
+        if (hasNullable)
         {
-            arrType = new ArrayTypeSymbol(baseType);
-            _arrayTypes[baseType.Name] = arrType;
+            if (!_nullableTypes.TryGetValue(elementType.Name, out var nt))
+            {
+                nt = new NullableTypeSymbol(elementType);
+                _nullableTypes[elementType.Name] = nt;
+            }
+            elementType = nt;
         }
 
-        return arrType;
+        // 2) luego array sobre el elementType (para que i?[3] sea array de i?)
+        if (hasArray)
+        {
+            if (!_arrayTypes.TryGetValue(elementType.Name, out var arr))
+            {
+                arr = new ArrayTypeSymbol(elementType);
+                _arrayTypes[elementType.Name] = arr;
+            }
+            return arr;
+        }
+
+        return elementType;
     }
 
-    // ✅ para reglas del profe: sacar tamaño cuando viene i[3]
     public static bool TryGetArraySize(TypeRefNode typeRef, out int size)
     {
         size = 0;
@@ -65,15 +82,13 @@ public static class TypeResolver
         return int.TryParse(inside, out size);
     }
 
-    // Quita "?" y "[n]"
     private static string ExtractBaseType(string name)
     {
         var bracketIndex = name.IndexOf('[');
         if (bracketIndex >= 0)
             name = name.Substring(0, bracketIndex);
 
-        if (name.EndsWith("?"))
-            name = name.Substring(0, name.Length - 1);
+        name = name.Replace("?", "");
 
         return name;
     }

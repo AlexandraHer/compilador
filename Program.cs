@@ -10,20 +10,7 @@ class Program
     static void Main(string[] args)
     {
         var input = @"
-use System;
-use Generics;
-
-object Program
-{
-	entry func Main():i {
-  declare arr:i[3];
-  set arr[0] = 4;
-  show(len(arr));
-  set arr = [1,4];
-  show(len(arr));
-  gives 0;
-}
-Explicar
+entry func Main():i { declare arr:i?[3] = [1, null, 3]; gives 0; }
 ";
 
         // ======================

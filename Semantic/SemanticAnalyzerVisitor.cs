@@ -200,8 +200,8 @@ public sealed class SemanticAnalyzerVisitor
 
         if (varDecl.Initializer == null) return;
 
-        // ✅ Caso especial: declare arr:i[3] = [ ... ]
-        if (declaredType is ArrayTypeSymbol declaredArr && varDecl.Initializer is ArrayLiteralNode lit)
+        // Caso: declare arr:i[3] = [ ... ]
+        if (UnwrapNullable(declaredType) is ArrayTypeSymbol declaredArr && varDecl.Initializer is ArrayLiteralNode lit)
         {
             if (TypeResolver.TryGetArraySize(varDecl.Type, out var declaredSize))
             {
@@ -210,27 +210,33 @@ public sealed class SemanticAnalyzerVisitor
                         $"Array literal size mismatch for '{varDecl.Name}'. Expected {declaredSize} elements, got {lit.Items.Count}.");
             }
 
-            var initType = VisitExpression(lit);
+            // validar tipo de elementos
+            foreach (var item in lit.Items)
+            {
+                var itemType = VisitExpression(item);
+                if (!IsAssignable(declaredArr.ElementType, itemType))
+                    throw new SemanticException(
+                        $"Type mismatch in array initializer of '{varDecl.Name}'. Expected '{declaredArr.ElementType}', got '{itemType}'.");
+            }
 
-            if (initType is not ArrayTypeSymbol initArr || initArr.ElementType != declaredArr.ElementType)
-                throw new SemanticException($"Type mismatch in initializer of '{varDecl.Name}'.");
-            
             return;
         }
 
-        // ✅ Caso normal: declare x:i = expr
-        var exprType = VisitExpression(varDecl.Initializer);
-        if (exprType != declaredType)
+        // Caso general
+        var initType = VisitExpression(varDecl.Initializer);
+        if (!IsAssignable(declaredType, initType))
             throw new SemanticException(
-                $"Type mismatch in initializer of '{varDecl.Name}'. Expected '{declaredType}', got '{exprType}'.");
+                $"Type mismatch in initializer of '{varDecl.Name}'. Expected '{declaredType}', got '{initType}'.");
     }
 
     private void VisitAssign(AssignNode assign)
     {
-        // set arr[0] = ...
+        // set arr[0] = expr;
         if (assign.Target is IndexExprNode idx)
         {
             var targetType = VisitExpression(idx.Target);
+            targetType = UnwrapNullable(targetType);
+
             if (targetType is not ArrayTypeSymbol arrType)
                 throw new SemanticException("Index assignment target must be an array.");
 
@@ -239,23 +245,37 @@ public sealed class SemanticAnalyzerVisitor
                 throw new SemanticException("Array index must be int.");
 
             var valueType = VisitExpression(assign.Value);
-            if (valueType != arrType.ElementType)
-                throw new SemanticException($"Type mismatch in array element assignment. Expected '{arrType.ElementType}', got '{valueType}'.");
+            if (!IsAssignable(arrType.ElementType, valueType))
+                throw new SemanticException(
+                    $"Type mismatch in array element assignment. Expected '{arrType.ElementType}', got '{valueType}'.");
 
             return;
         }
 
-        // set x = ...  o  set arr = [...]
+        // set x = expr;  o set arr = [..]
         if (assign.Target is not IdentifierNode identifier)
             throw new SemanticException("Assignment target must be an identifier or an array index.");
 
         var symbol = _currentScope.Lookup(identifier.Name) as VariableSymbol;
         if (symbol == null)
             throw new SemanticException($"Variable '{identifier.Name}' not declared.");
+        
+        if (symbol.Type is ArrayTypeSymbol arrT && assign.Value is ArrayLiteralNode lit)
+        {
+            foreach (var item in lit.Items)
+            {
+                var itemType = VisitExpression(item); // puede ser NullTypeSymbol
+                if (!IsAssignable(arrT.ElementType, itemType))
+                    throw new SemanticException(
+                        $"Type mismatch in array assignment to '{symbol.Name}'. Expected elements '{arrT.ElementType}', got '{itemType}'.");
+            }
+            return;
+        }
 
         var exprType = VisitExpression(assign.Value);
-        if (exprType != symbol.Type)
-            throw new SemanticException($"Type mismatch in assignment to '{symbol.Name}'. Expected '{symbol.Type}', got '{exprType}'.");
+        if (!IsAssignable(symbol.Type, exprType))
+            throw new SemanticException(
+                $"Type mismatch in assignment to '{symbol.Name}'. Expected '{symbol.Type}', got '{exprType}'.");
     }
 
     private void VisitReturn(ReturnNode ret, TypeSymbol expectedReturnType)
@@ -288,7 +308,6 @@ public sealed class SemanticAnalyzerVisitor
             case CallExprNode call:
                 return VisitCall(call);
 
-            // ✅ Si estás usando obj.suma(...), soportamos esto
             case MethodCallExprNode mcall:
                 return VisitMethodCall(mcall);
 
@@ -303,7 +322,6 @@ public sealed class SemanticAnalyzerVisitor
 
             case UnaryExprNode un:
                 return VisitUnary(un);
-
             default:
                 throw new SemanticException($"Unsupported expression type '{expr.GetType().Name}'.");
         }
@@ -353,56 +371,6 @@ public sealed class SemanticAnalyzerVisitor
 
         return ValidateBinaryOperator(bin.Operator, leftType);
     }
-
-    private TypeSymbol VisitUnary(UnaryExprNode un)
-    {
-        var t = VisitExpression(un.Operand);
-
-        if (un.Operator == UnaryOperatorKind.Not)
-        {
-            if (t != BuiltInTypeSymbol.Bool)
-                throw new SemanticException("Operator 'not' only valid for bool.");
-            return BuiltInTypeSymbol.Bool;
-        }
-
-        throw new SemanticException($"Unsupported unary operator '{un.Operator}'.");
-    }
-
-    private TypeSymbol VisitArrayLiteral(ArrayLiteralNode arr)
-    {
-        if (arr.Items.Count == 0)
-            throw new SemanticException("Cannot infer type of empty array literal [].");
-
-        var firstType = VisitExpression(arr.Items[0]);
-
-        for (int i = 1; i < arr.Items.Count; i++)
-        {
-            var t = VisitExpression(arr.Items[i]);
-            if (t != firstType)
-                throw new SemanticException("All elements in array literal must have the same type.");
-        }
-
-        // devolver tipo arreglo (cacheado por TypeResolver vía ArrayTypeSymbol)
-        // truco mínimo: construir un TypeRefNode fake "i[0]" NO. Mejor: si firstType ya es BuiltInTypeSymbol/ClassTypeSymbol,
-        // pedimos el ArrayTypeSymbol directo con Resolve usando un TypeRefNode temporal:
-        var fake = new TypeRefNode(arr.Span, $"{firstType.Name}[{arr.Items.Count}]");
-        return TypeResolver.Resolve(fake);
-    }
-
-    private TypeSymbol VisitIndexExpr(IndexExprNode idx)
-    {
-        var targetType = VisitExpression(idx.Target);
-
-        if (targetType is not ArrayTypeSymbol arrType)
-            throw new SemanticException("Indexing is only valid on arrays.");
-
-        var indexType = VisitExpression(idx.Index);
-        if (indexType != BuiltInTypeSymbol.Int)
-            throw new SemanticException("Array index must be int.");
-
-        return arrType.ElementType;
-    }
-
     private TypeSymbol VisitCall(CallExprNode call)
     {
         // ================= BUILT-INS =================
@@ -435,7 +403,13 @@ public sealed class SemanticAnalyzerVisitor
             case "len":
                 if (call.Arguments.Count != 1)
                     throw new SemanticException("len expects 1 argument.");
-                VisitExpression(call.Arguments[0]);
+
+                var tLen = VisitExpression(call.Arguments[0]);
+                tLen = UnwrapNullable(tLen);
+
+                if (tLen is not ArrayTypeSymbol)
+                    throw new SemanticException("len(...) expects an array.");
+
                 return BuiltInTypeSymbol.Int;
 
             case "convertToInt":
@@ -556,7 +530,7 @@ public sealed class SemanticAnalyzerVisitor
     private TypeSymbol ResolveLiteralType(LiteralNode lit)
     {
         if (lit.Value == null)
-            throw new SemanticException("Null literal not supported yet.");
+            return NullTypeSymbol.Instance;
 
         return lit.Value switch
         {
@@ -566,5 +540,81 @@ public sealed class SemanticAnalyzerVisitor
             string => BuiltInTypeSymbol.String,
             _ => throw new SemanticException($"Unknown literal type '{lit.Value.GetType().Name}'.")
         };
+    }
+
+    private static TypeSymbol UnwrapNullable(TypeSymbol t)
+        => t is NullableTypeSymbol nt ? nt.Underlying : t;
+
+    private static bool IsAssignable(TypeSymbol target, TypeSymbol source)
+    {
+        if (source is NullTypeSymbol)
+            return target is NullableTypeSymbol;
+
+        if (target is NullableTypeSymbol nt)
+        {
+            if (source == nt) return true;
+            return source == nt.Underlying;
+        }
+
+        return target == source;
+    }
+
+    private TypeSymbol VisitUnary(UnaryExprNode un)
+    {
+        var t = VisitExpression(un.Operand);
+
+        if (un.Operator == UnaryOperatorKind.Not)
+        {
+            if (t != BuiltInTypeSymbol.Bool)
+                throw new SemanticException("Operator 'not' only valid for bool.");
+            return BuiltInTypeSymbol.Bool;
+        }
+
+        throw new SemanticException($"Unsupported unary operator '{un.Operator}'.");
+    }
+
+    private TypeSymbol VisitArrayLiteral(ArrayLiteralNode arr)
+    {
+        if (arr.Items.Count == 0)
+            throw new SemanticException("Cannot infer type of empty array literal [].");
+
+        // Tipo del primer elemento (sin nullable)
+        var first = VisitExpression(arr.Items[0]);
+        first = UnwrapNullable(first);
+
+        // No permitimos null dentro del literal por ahora (simple y seguro)
+        if (first is NullTypeSymbol)
+            throw new SemanticException("Array literal cannot start with null (cannot infer element type).");
+
+        for (int i = 1; i < arr.Items.Count; i++)
+        {
+            var t = VisitExpression(arr.Items[i]);
+            t = UnwrapNullable(t);
+
+            if (t is NullTypeSymbol)
+                throw new SemanticException("Array literal cannot contain null elements (for now).");
+
+            if (t != first)
+                throw new SemanticException("All elements in array literal must have the same type.");
+        }
+
+        // Usa TypeResolver para que el tipo arreglo sea consistente/cached
+        var fake = new TypeRefNode(arr.Span, $"{first.Name}[{arr.Items.Count}]");
+        return TypeResolver.Resolve(fake);
+    }
+
+    private TypeSymbol VisitIndexExpr(IndexExprNode idx)
+    {
+        var targetType = VisitExpression(idx.Target);
+        targetType = UnwrapNullable(targetType);
+
+        if (targetType is not ArrayTypeSymbol arrType)
+            throw new SemanticException("Indexing is only valid on arrays.");
+
+        var indexType = VisitExpression(idx.Index);
+        if (indexType != BuiltInTypeSymbol.Int)
+            throw new SemanticException("Array index must be int.");
+
+        return arrType.ElementType;
     }
 }
