@@ -283,26 +283,31 @@ public sealed class Interpreter
                     throw new Exception("show expects 1 argument (runtime).");
 
                 var value = EvaluateExpression(call.Arguments[0]);
-                Console.Write(value?.ToString() ?? "null");  // NO salto de línea
+                Console.WriteLine(value?.ToString() ?? "null");
                 return 0; // dummy
             }
 
-            case "ask":
-            {
-                if (call.Arguments.Count != 1)
-                    throw new Exception("ask expects 1 argument (runtime).");
+                case "ask":
+{
+                    if (call.Arguments.Count != 1)
+                        throw new Exception("ask expects 1 argument (runtime).");
 
-                if (call.Arguments[0] is not IdentifierNode id)
-                    throw new Exception("ask expects an identifier (runtime).");
+                    if (call.Arguments[0] is not IdentifierNode id)
+                        throw new Exception("ask expects an identifier (runtime).");
 
-                var input = Console.ReadLine() ?? "";
+                    var input = Console.ReadLine() ?? "";
 
-                // ask(var) -> mete string en la variable
-                if (!_scope.Assign(id.Name, input))
-                    throw new Exception($"Variable '{id.Name}' not declared (runtime).");
+                    object valueToStore;
+                    if (int.TryParse(input, out var intValue))
+                        valueToStore = intValue;
+                    else
+                        valueToStore = input;
 
-                return input; // retorna string, por si lo usan en expresiones
-            }
+                    if (!_scope.Assign(id.Name, valueToStore))
+                        throw new Exception($"Variable '{id.Name}' not declared (runtime).");
+
+                    return valueToStore;
+                }
 
             case "len":
             {

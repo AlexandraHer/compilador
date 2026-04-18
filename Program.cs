@@ -2,6 +2,8 @@
 using MyLangCompiler.Nodes;
 using MyLangCompiler.Semantic;
 using MyLangCompiler.Runtime;
+using MyLangCompiler.CodeGen;
+using System.IO;
 
 namespace MyLangCompiler;
 
@@ -15,16 +17,88 @@ use Generics;
 
 object Program
 {
-	entry func Main():i {
-  declare arr:i[3];
-  set arr[0] = 4;
-  show(len(arr));
-  set arr = [1,4];
-  show(len(arr));
-  gives 0;
+	entry func Main():i
+	{
+		declare z:s;
+		declare x:i = 5;
+		declare y:i = 3;
+
+		loop (declare j:i = 0; j < 10; set j = j + 1)
+		{
+			show(j + y);
+		}
+
+		check (x > y)
+		{
+			show(""La variable x es mas grande que la variable y"");
+		}
+		otherwise
+		{
+			show(""La variable y es mas grande que la variable x"");
+		}
+
+		repeat (x < 7)
+		{
+			show(""While loop"");
+			set x = x + 1;
+		}
+
+		show(""Suma:"");
+		show(x + y);
+
+		show(""Resta:"");
+		show(x - y);
+
+		show(""Multiplicación:"");
+		show(x * y);
+
+		show(""División:"");
+		show(x / y);
+
+		show(""Módulo:"");
+		show(x % y);
+
+		show(""Ingresa un dato:"");
+		ask(z);
+
+		show(""Ingresaste:"");
+		show(z);
+		
+		declare obj:Math = Math();
+
+		obj.suma(x, y);
+
+		declare test:i = obj.suma(x, y);
+
+		set x = obj.suma(x, y);
+
+		declare arr:i[3] = [1,2,3];
+        show(arr[0]);
+		
+		show(""Factorial:"");
+		show(obj.factorial(x));
+		
+		gives 0;
+	}
 }
-Explicar
-";
+
+object Math
+{
+	func suma(a:i, c:i):i
+	{
+		gives a + c;
+	}
+	
+	func factorial(num:i):i
+	{
+		check (num == 1)
+		{
+			gives num;
+		}
+		
+		gives num * factorial(num - 1);
+	}
+}";
 
         // ======================
         // LEXER & PARSER
@@ -42,7 +116,7 @@ Explicar
         // ======================
 
         var visitor = new AstBuilderVisitor();
-        var ast = visitor.Visit(tree);
+        var ast = (ProgramNode)visitor.Visit(tree);
 
         Console.WriteLine("===== AST =====");
         AstPrinter.Print(ast);
@@ -57,9 +131,27 @@ Explicar
         try
         {
             var analyzer = new SemanticAnalyzerVisitor();
-            analyzer.Analyze((ProgramNode)ast);
+            analyzer.Analyze(ast);
 
             Console.WriteLine("Semantic analysis completed successfully.");
+
+            // ======================
+            // LLVM CODE GENERATION
+            // ======================
+
+            Console.WriteLine();
+            Console.WriteLine("===== LLVM GENERATION =====");
+
+            var codeGenerator = new CodeGenerator("MyLangModule");
+            var module = codeGenerator.Generate(ast);
+
+            module.PrintToFile("output.ll");
+
+            Console.WriteLine("Archivo LLVM generado: output.ll");
+            var llvmText = File.ReadAllText("output.ll");
+            Console.WriteLine();
+            Console.WriteLine("===== LLVM IR =====");
+            Console.WriteLine(llvmText);
 
             // ======================
             // EXECUTION (INTERPRETER)
@@ -69,7 +161,7 @@ Explicar
             Console.WriteLine("===== EXECUTION =====");
 
             var interpreter = new Interpreter();
-            var result = interpreter.Execute((ProgramNode)ast);
+            var result = interpreter.Execute(ast);
 
             Console.WriteLine($"Program result: {result}");
         }
