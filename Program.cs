@@ -73,10 +73,22 @@ object Program
 		set x = obj.suma(x, y);
 
 		declare arr:i[3] = [1,2,3];
-        show(arr[0]);
-		
+		show(arr[0]);
+
+		declare idx:i = 1;
+		show(idx);
+		show(arr[idx]);
+		set arr[idx] = 99;
+		show(arr[idx]);
+		show(arr[1]);
+
+declare numero:i;
+show(""Ingresa un numero"");
+ask(numero);
+
+
 		show(""Factorial:"");
-		show(obj.factorial(x));
+		show(obj.factorial(numero));
 		
 		gives 0;
 	}

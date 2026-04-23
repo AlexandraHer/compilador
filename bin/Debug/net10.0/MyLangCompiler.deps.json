@@ -9,7 +9,9 @@
       "MyLangCompiler/1.0.0": {
         "dependencies": {
           "Antlr4.Runtime.Standard": "4.13.1",
-          "Antlr4BuildTasks": "12.14.0"
+          "Antlr4BuildTasks": "12.14.0",
+          "LLVMSharp": "20.1.2",
+          "libLLVM.runtime.win-x64": "20.1.2"
         },
         "runtime": {
           "MyLangCompiler.dll": {}
@@ -32,6 +34,34 @@
           "lib/netstandard2.0/Antlr4BuildTasks.dll": {
             "assemblyVersion": "12.14.0.0",
             "fileVersion": "12.14.0.0"
+          }
+        }
+      },
+      "libLLVM.runtime.win-x64/20.1.2": {
+        "runtimeTargets": {
+          "runtimes/win-x64/native/libLLVM.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "20.1.2.0"
+          }
+        }
+      },
+      "LLVMSharp/20.1.2": {
+        "dependencies": {
+          "LLVMSharp.Interop": "20.1.2"
+        },
+        "runtime": {
+          "lib/net8.0/LLVMSharp.dll": {
+            "assemblyVersion": "20.1.2.0",
+            "fileVersion": "20.1.2.0"
+          }
+        }
+      },
+      "LLVMSharp.Interop/20.1.2": {
+        "runtime": {
+          "lib/net8.0/LLVMSharp.Interop.dll": {
+            "assemblyVersion": "20.1.2.0",
+            "fileVersion": "20.1.2.0"
           }
         }
       },
@@ -129,6 +159,27 @@
       "sha512": "sha512-ZL7dXisnqvlmXv0BZkSf4yYXHD5XsYmrubgHC8L7kqsrrTaej0q+VQLF8SmFyrnwisiN6ys9p8mZzEoCp0R+Fw==",
       "path": "antlr4buildtasks/12.14.0",
       "hashPath": "antlr4buildtasks.12.14.0.nupkg.sha512"
+    },
+    "libLLVM.runtime.win-x64/20.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ofp+5RmvxJyuyho6tPvo7GBe4CLvHkIpiyrq93M4gEzzJxcwCsxbCIBkJYehgbJoVnh6RNmgFrdUjBiSDTKYkA==",
+      "path": "libllvm.runtime.win-x64/20.1.2",
+      "hashPath": "libllvm.runtime.win-x64.20.1.2.nupkg.sha512"
+    },
+    "LLVMSharp/20.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Y335JTJAcIJNFBtsP2n3q2KDXISVGoDSL0wW60FFZhPJVrsfsGlo8Hy1W30hXbVnOXN2orPQpMPEBrNTXtxbWQ==",
+      "path": "llvmsharp/20.1.2",
+      "hashPath": "llvmsharp.20.1.2.nupkg.sha512"
+    },
+    "LLVMSharp.Interop/20.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-cHMef03EWJYxrKskQahCYUs4o9GPdChKb/mleQ/XoNkp9t31Ub9e0H/NdwsLvNluSF/9FgoRlvU/q4iOityIlA==",
+      "path": "llvmsharp.interop/20.1.2",
+      "hashPath": "llvmsharp.interop.20.1.2.nupkg.sha512"
     },
     "Microsoft.Build.Framework/18.0.2": {
       "type": "package",

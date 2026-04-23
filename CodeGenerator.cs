@@ -1,4 +1,4 @@
-﻿using LLVMSharp.Interop;
+using LLVMSharp.Interop;
 using MyLangCompiler.Enumerations;
 using MyLangCompiler.Nodes;
 using System.Xml.Linq;
@@ -28,6 +28,11 @@ public class CodeGenerator
 
     private LLVMValueRef _printfFunction;
     private LLVMTypeRef _printfType;
+
+    private LLVMValueRef _scanfFunction;
+    private LLVMTypeRef _scanfType;
+
+    private int _askBufferCounter = 0;
     public CodeGenerator(string moduleName)
     {
         _context = LLVMContextRef.Create();
@@ -82,13 +87,21 @@ public class CodeGenerator
     {
         var i8PtrType = LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0);
 
+        // printf(const char*, ...) -> i32
         _printfType = LLVMTypeRef.CreateFunction(
             LLVMTypeRef.Int32,
             new[] { i8PtrType },
             true
         );
-
         _printfFunction = _module.AddFunction("printf", _printfType);
+
+        // scanf(const char*, ...) -> i32
+        _scanfType = LLVMTypeRef.CreateFunction(
+            LLVMTypeRef.Int32,
+            new[] { i8PtrType },
+            true
+        );
+        _scanfFunction = _module.AddFunction("scanf_s", _scanfType);
     }
     public LLVMModuleRef Generate(ProgramNode program)
     {
@@ -130,7 +143,8 @@ public class CodeGenerator
         }
 
         var funcType = LLVMTypeRef.CreateFunction(returnType, paramTypes.ToArray(), false);
-        var function = _module.AddFunction(fn.Name, funcType);
+        var llvmFunctionName = fn.IsEntry ? "main" : fn.Name;
+        var function = _module.AddFunction(llvmFunctionName, funcType);
 
         _functions[fn.Name] = function;
         _functionTypes[fn.Name] = funcType;
@@ -314,14 +328,36 @@ public class CodeGenerator
 
     private void GenerateAssign(AssignNode node)
     {
-        if (node.Target is not IdentifierNode id)
-            throw new NotImplementedException("Solo se soporta asignación a identificadores.");
+        if (node.Target is IdentifierNode id)
+        {
+            if (!_variables.TryGetValue(id.Name, out var variableInfo))
+                throw new Exception($"Variable no definida: {id.Name}");
 
-        if (!_variables.TryGetValue(id.Name, out var alloca))
-            throw new Exception($"Variable no definida: {id.Name}");
+            var value = GenerateExpression(node.Value);
+            _builder.BuildStore(value, variableInfo.Pointer);
+            return;
+        }
 
-        var value = GenerateExpression(node.Value);
-        _builder.BuildStore(value, alloca.Pointer);
+        if (node.Target is IndexExprNode indexExpr)
+        {
+            if (indexExpr.Target is not IdentifierNode arrayId)
+                throw new NotSupportedException("Solo se admite asignación a arrays por nombre, por ejemplo: arr[i] = valor");
+
+            if (!_variables.TryGetValue(arrayId.Name, out var arrayInfo))
+                throw new Exception($"Variable no definida: {arrayId.Name}");
+
+            if (!arrayInfo.IsArray)
+                throw new Exception($"La variable '{arrayId.Name}' no es un array.");
+
+            var indexValue = GenerateExpression(indexExpr.Index);
+            var elementPtr = GetIntArrayElementPointer(arrayInfo, indexValue);
+            var value = GenerateExpression(node.Value);
+
+            _builder.BuildStore(value, elementPtr);
+            return;
+        }
+
+        throw new NotImplementedException("Solo se soporta asignación a identificadores o elementos de array.");
     }
 
     private LLVMValueRef GenerateExpression(ExprNode expr)
@@ -348,15 +384,28 @@ public class CodeGenerator
 
             case ArrayLiteralNode arrayLiteral:
                 return GenerateArrayLiteral(arrayLiteral);
-
-                case IndexExprNode indexExpr:
+           
+            case IndexExprNode indexExpr:
                 {
+                    // Solo permite algo como arr[0]
                     if (indexExpr.Target is not IdentifierNode id)
                         throw new NotSupportedException("Solo se admite acceso a arrays por nombre, por ejemplo: arr[0]");
 
-                    var arrayInfo = _variables[id.Name];
+                    // Busca el array en la tabla de variables
+                    if (!_variables.TryGetValue(id.Name, out var arrayInfo))
+                        throw new Exception($"Variable no definida: {id.Name}");
+
+                    // Verifica que sí sea un array
+                    if (!arrayInfo.IsArray)
+                        throw new Exception($"La variable '{id.Name}' no es un array.");
+
+                    // Genera el índice
                     var indexValue = GenerateExpression(indexExpr.Index);
+
+                    // Obtiene el puntero al elemento arr[i]
                     var elementPtr = GetIntArrayElementPointer(arrayInfo, indexValue);
+
+                    // Carga y retorna el valor del elemento
                     return _builder.BuildLoad2(arrayInfo.ElementType, elementPtr, "array.elem.load");
                 }
 
@@ -431,50 +480,119 @@ public class CodeGenerator
 
     private LLVMValueRef GenerateCall(CallExprNode call)
     {
+        // ===================== show() =====================
         if (call.FunctionName == "show")
         {
             if (call.Arguments.Count != 1)
                 throw new Exception("show expects 1 argument.");
 
-            var arg = call.Arguments[0];
+            var value = GenerateExpression(call.Arguments[0]);
+            var valueType = value.TypeOf;
 
-            // 🔥 CASO 1: string literal
-            if (arg is LiteralNode lit && lit.Value is string str)
+            // CASO: bool (i1) → select entre "true"/"false" + %s
+            if (valueType.Kind == LLVMTypeKind.LLVMIntegerTypeKind && valueType.IntWidth == 1)
             {
-                var format = _builder.BuildGlobalStringPtr("%s\n", "fmtstr");
-                var text = _builder.BuildGlobalStringPtr(str, "str");
+                var trueStr = _builder.BuildGlobalStringPtr("true", "bool.true");
+                var falseStr = _builder.BuildGlobalStringPtr("false", "bool.false");
+                var selected = _builder.BuildSelect(value, trueStr, falseStr, "bool.sel");
 
-                _builder.BuildCall2(_printfType, _printfFunction, new[] { format, text }, "");
+                var format = _builder.BuildGlobalStringPtr("%s\n", "fmtbool");
+                _builder.BuildCall2(_printfType, _printfFunction, new[] { format, selected }, "");
 
                 return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
             }
 
-            // 🔥 CASO 2: variable string (z)
-            if (arg is IdentifierNode id &&
-                _variableTypes.TryGetValue(id.Name, out var varType) &&
-                varType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+            // CASO: int (i32) → %d
+            if (valueType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
             {
-                var format = _builder.BuildGlobalStringPtr("%s\n", "fmtstr");
-                var value = GenerateExpression(arg);
-
+                var format = _builder.BuildGlobalStringPtr("%d\n", "fmtint");
                 _builder.BuildCall2(_printfType, _printfFunction, new[] { format, value }, "");
 
                 return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
             }
 
-            // 🔥 CASO 3: números
-            var intValue = GenerateExpression(arg);
-            var intFormat = _builder.BuildGlobalStringPtr("%d\n", "fmtint");
+            // CASO: float → promover a double + %f
+            if (valueType.Kind == LLVMTypeKind.LLVMFloatTypeKind)
+            {
+                var promoted = _builder.BuildFPExt(value, LLVMTypeRef.Double, "fext");
+                var format = _builder.BuildGlobalStringPtr("%f\n", "fmtfloat");
+                _builder.BuildCall2(_printfType, _printfFunction, new[] { format, promoted }, "");
 
-            _builder.BuildCall2(_printfType, _printfFunction, new[] { intFormat, intValue }, "");
+                return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+            }
 
+            // CASO: double → %f directamente
+            if (valueType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+            {
+                var format = _builder.BuildGlobalStringPtr("%f\n", "fmtdouble");
+                _builder.BuildCall2(_printfType, _printfFunction, new[] { format, value }, "");
+
+                return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+            }
+
+            // CASO: string (pointer / i8*) → %s
+            if (valueType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+            {
+                var format = _builder.BuildGlobalStringPtr("%s\n", "fmtstr");
+                _builder.BuildCall2(_printfType, _printfFunction, new[] { format, value }, "");
+
+                return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+            }
+
+            // Fallback: intentar como entero
+            var fallbackFmt = _builder.BuildGlobalStringPtr("%d\n", "fmtfallback");
+            _builder.BuildCall2(_printfType, _printfFunction, new[] { fallbackFmt, value }, "");
             return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
         }
 
-        if (call.FunctionName == "ask")
-        {
-            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
-        }
+     // ===================== ask() =====================
+if (call.FunctionName == "ask")
+{
+    if (call.Arguments.Count != 1)
+        throw new Exception("ask expects 1 argument.");
+
+    if (call.Arguments[0] is not IdentifierNode askId)
+        throw new Exception("ask expects an identifier.");
+
+    if (!_variables.TryGetValue(askId.Name, out var varInfo))
+        throw new Exception($"Variable no definida: {askId.Name}");
+
+    var varType = varInfo.Type;
+
+    // CASO: int (i32) → scanf("%d", &var)
+    if (varType.Kind == LLVMTypeKind.LLVMIntegerTypeKind && varType.IntWidth == 32)
+    {
+        var scanfFmt = _builder.BuildGlobalStringPtr("%d", $"askfmt.{_askBufferCounter++}");
+        _builder.BuildCall2(_scanfType, _scanfFunction, new[] { scanfFmt, varInfo.Pointer }, "");
+        return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+    }
+
+    // CASO: float → scanf("%f", &var)
+    if (varType.Kind == LLVMTypeKind.LLVMFloatTypeKind)
+    {
+        var scanfFmt = _builder.BuildGlobalStringPtr("%f", $"askfmt.{_askBufferCounter++}");
+        _builder.BuildCall2(_scanfType, _scanfFunction, new[] { scanfFmt, varInfo.Pointer }, "");
+        return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+    }
+
+    // CASO: string (i8*) → buffer de 256 bytes + scanf("%255s")
+    var bufferType = LLVMTypeRef.CreateArray(LLVMTypeRef.Int8, 256);
+    var buffer = _builder.BuildAlloca(bufferType, $"ask.buf.{_askBufferCounter++}");
+
+    var zero = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+    var bufferPtr = _builder.BuildInBoundsGEP2(
+        bufferType,
+        buffer,
+        new[] { zero, zero },
+        "ask.buf.ptr"
+    );
+
+    var fmt = _builder.BuildGlobalStringPtr("%255s", $"askfmt.{_askBufferCounter++}");
+    _builder.BuildCall2(_scanfType, _scanfFunction, new[] { fmt, bufferPtr }, "");
+    _builder.BuildStore(bufferPtr, varInfo.Pointer);
+
+    return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+}
 
         if (_classNames.Contains(call.FunctionName))
         {
